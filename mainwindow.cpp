@@ -202,6 +202,9 @@ void MainWindow::setupConnections()
             [this](int index) {
                 gameWidget->splitProjectile(index);
             });
+    
+    // Connect GameEngine to GameWidget for sword position updates
+    gameEngine->connectToGameWidget(gameWidget);
 }
 
 void MainWindow::startCalibration()
@@ -264,7 +267,8 @@ void MainWindow::processFrame()
         handDetected = true;
         mapHandToGameSpace(handPos, gameX, gameY);
         
-        // Update hand with z coordinate matching the sword position in hit zone
+        // Update hand position - this now calculates sword handle and tip positions
+        // in updateHandPosition method
         gameEngine->updateHandPosition(QVector3D(gameX, gameY, 0.75f));
         gameWidget->setHandPosition(gameX, gameY);
         

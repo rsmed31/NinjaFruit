@@ -1,4 +1,5 @@
 #include "gameengine.h"
+#include "gamewidget.h"  // Add this include to have access to GameWidget class definition
 #include <QDebug>
 #include <GL/gl.h>
 
@@ -90,8 +91,9 @@ void GameEngine::resetGame()
 
 void GameEngine::updateHandPosition(const QVector3D& position)
 {
-    // Change z-coordinate to match the new sword position at z=0.5f
-    m_handPosition = QVector3D(position.x(), position.y(), 0.5f);
+    m_handPosition = position;
+    // We don't need to calculate m_swordHandle and m_swordTip here anymore
+    // They will be updated by the swordPositionUpdated signal from GameWidget
 }
 
 QList<Projectile> GameEngine::getProjectiles() const
@@ -130,9 +132,6 @@ void GameEngine::checkCollisions()
     const float HIT_MIN_Z = 0.0f;
     const float HIT_MAX_Z = 1.5f;
     
-    // Slightly larger collision radius for more forgiving hit detection
-    const float HAND_COLLISION_RADIUS = 2.2f;
-    
     for (int i = 0; i < m_projectiles.size(); i++) {
         Projectile& projectile = m_projectiles[i];
         if (projectile.getState() != Projectile::ACTIVE)
@@ -140,32 +139,25 @@ void GameEngine::checkCollisions()
         
         QVector3D pos = projectile.getPosition();
         
-        // Check if projectile is within hit zone boundaries
+        // Check if projectile is within hit zone boundaries (semi-cylindrical area)
         bool inHitZone = (pos.x() >= HIT_MIN_X && pos.x() <= HIT_MAX_X && 
                           pos.z() >= HIT_MIN_Z && pos.z() <= HIT_MAX_Z &&
                           pos.y() >= 0.1f && pos.y() <= 5.0f);
         
-        // Collision occurs if projectile is in hit zone and overlaps with sword
-        if (inHitZone && projectile.isColliding(m_handPosition, HAND_COLLISION_RADIUS)) {
-            // Mark projectile as sliced for visual effect
+        // Use line segment collision detection with the actual sword geometry
+        if (inHitZone && projectile.isColliding(m_swordHandle, m_swordTip)) {
+            // Mark projectile as sliced
             projectile.split();
             
             // Update score based on projectile type
             if (projectile.getType() == Projectile::BOMB) {
-                // Bombs reduce score but never below zero
                 m_score = qMax(0, m_score - 30);
             } else {
-                // Fruits add points based on type
                 m_score += projectile.getPointValue();
             }
             
-            // Emit signals for UI updates and visual effects
             emit scoreChanged(m_score);
             emit projectileSplit(i);
-            
-            qDebug() << "Sliced projectile of type" << projectile.getType() 
-                     << "at position" << pos.x() << pos.y() << pos.z()
-                     << "; score updated to" << m_score;
         }
     }
 }
@@ -251,7 +243,6 @@ QVector3D GameEngine::generateRandomVelocity()
 
 void GameEngine::handleMissedProjectiles()
 {
-    // Define the same hit zone dimensions as in checkCollisions
     const float HIT_MIN_X = -8.0f;
     const float HIT_MAX_X = 8.0f;
     const float HIT_MIN_Z = 0.0f;
@@ -281,31 +272,6 @@ void GameEngine::handleMissedProjectiles()
                 m_lives--;
                 emit livesChanged(m_lives);
                 
-                qDebug() << "Missed a fruit of type" << projectile.getType() 
-                         << "at position" << pos.x() << pos.y() << pos.z()
-                         << "; Lives remaining:" << m_lives;
-                
-                // Check for game over
-                if (m_lives <= 0) {
-                    pauseGame();
-                    emit gameOver(m_score);
-                }
-            }
-        }
-        
-        // Also check for projectiles that hit the floor inside the hit zone
-        else if (pos.y() <= 0.1f && pos.z() >= HIT_MIN_Z && pos.z() <= HIT_MAX_Z) {
-            // Mark as split
-            projectile.split();
-            
-            // Only penalize for fruits (not bombs) that were inside hit zone
-            if (projectile.getType() != Projectile::BOMB &&
-                pos.x() >= HIT_MIN_X && pos.x() <= HIT_MAX_X) {
-                m_lives--;
-                emit livesChanged(m_lives);
-                
-                qDebug() << "Fruit hit the floor in hit zone; Lives remaining:" << m_lives;
-                
                 // Check for game over
                 if (m_lives <= 0) {
                     pauseGame();
@@ -314,4 +280,18 @@ void GameEngine::handleMissedProjectiles()
             }
         }
     }
+}
+
+void GameEngine::connectToGameWidget(GameWidget* widget)
+{
+    if (widget) {
+        connect(widget, &GameWidget::swordPositionUpdated, 
+                this, &GameEngine::updateSwordPosition);
+    }
+}
+
+void GameEngine::updateSwordPosition(const QVector3D& handlePos, const QVector3D& tipPos)
+{
+    m_swordHandle = handlePos;
+    m_swordTip = tipPos;
 }

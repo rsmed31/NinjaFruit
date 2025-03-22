@@ -34,6 +34,10 @@ public:
     // Split a projectile at the specified index
     void splitProjectile(int index);
 
+signals:
+    // Add this signal to notify when sword position changes
+    void swordPositionUpdated(const QVector3D& handlePos, const QVector3D& tipPos);
+
 protected:
     // OpenGL functions that must be implemented
     void initializeGL() override;
@@ -77,7 +81,10 @@ private:
     void drawHandRange();
     void drawVirtualHand();
     void drawProjectiles();
-    void drawDistanceIndicators(); // Add this missing declaration
+    void drawDistanceIndicators();
+    
+    // Add missing declaration for getSwordEndpoints method
+    void getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos);
     
     // OpenGL-specific helpers
     void createShaders();

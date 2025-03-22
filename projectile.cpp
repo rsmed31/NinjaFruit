@@ -54,16 +54,45 @@ void Projectile::update(float deltaTime)
     }
 }
 
-bool Projectile::isColliding(const QVector3D& point, float collisionDistance) const
+// Replace old point-based collision with line segment collision
+bool Projectile::isColliding(const QVector3D& swordHandle, const QVector3D& swordTip) const
 {
     if (m_state != ACTIVE) return false;
     
-    // Calculate distance between projectile center and point (sword position)
-    float distance = (m_position - point).length();
+    // Vector from start to end of sword
+    QVector3D swordVector = swordTip - swordHandle;
+    float swordLength = swordVector.length();
     
-    // More generous collision detection - slightly larger than the sum of radii
-    // This makes it easier to hit projectiles and feels more satisfying
-    return distance < (m_radius + collisionDistance) * 1.1f;
+    // Normalize the sword vector
+    QVector3D swordDirection = swordVector / swordLength;
+    
+    // Vector from sword start to projectile center
+    QVector3D startToProjectile = m_position - swordHandle;
+    
+    // Project this vector onto the sword line
+    float projection = QVector3D::dotProduct(startToProjectile, swordDirection);
+    
+    // Find the closest point on the sword line segment to the projectile
+    QVector3D closestPoint;
+    
+    if (projection <= 0) {
+        // Closest to the sword handle
+        closestPoint = swordHandle;
+    } 
+    else if (projection >= swordLength) {
+        // Closest to the sword tip
+        closestPoint = swordTip;
+    } 
+    else {
+        // Closest to a point on the sword blade
+        closestPoint = swordHandle + swordDirection * projection;
+    }
+    
+    // Calculate the distance from the closest point to the projectile center
+    float distance = (m_position - closestPoint).length();
+    
+    // A hit occurs only if the distance is less than the projectile radius
+    return distance <= m_radius;
 }
 
 void Projectile::split()

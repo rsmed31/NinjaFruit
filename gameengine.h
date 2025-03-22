@@ -8,6 +8,9 @@
 #include <QRandomGenerator>
 #include "projectile.h"
 
+// Forward declaration of GameWidget to avoid circular dependency
+class GameWidget;
+
 class GameEngine : public QObject
 {
     Q_OBJECT
@@ -33,6 +36,13 @@ public:
     int getLives() const { return m_lives; }
     int getGameTime() const { return m_gameTime; }
     bool isGameRunning() const { return m_gameRunning; }
+    
+    // Sword geometry for collision detection
+    QVector3D getSwordHandle() const { return m_swordHandle; }
+    QVector3D getSwordTip() const { return m_swordTip; }
+    
+    // Connect to GameWidget for sword position updates
+    void connectToGameWidget(GameWidget* widget);
 
 signals:
     // UI update signals
@@ -45,6 +55,10 @@ signals:
     void projectileAdded(const Projectile& projectile);
     void projectileRemoved(int index);
     void projectileSplit(int index);
+
+public slots:
+    // Add this slot to receive sword position updates
+    void updateSwordPosition(const QVector3D& handlePos, const QVector3D& tipPos);
 
 private slots:
     void updateGame();
@@ -62,6 +76,8 @@ private:
     int m_gameTime; // seconds remaining
     float m_elapsedTime; // total time in seconds
     QVector3D m_handPosition;
+    QVector3D m_swordHandle;
+    QVector3D m_swordTip;
     
     // Launch parameters
     struct LaunchZone {

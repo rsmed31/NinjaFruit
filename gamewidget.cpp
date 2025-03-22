@@ -131,8 +131,8 @@ void GameWidget::paintGL()
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     drawDistanceIndicators();
+    drawProjectiles();   // Draw the semi-cylindrical hit zone
     drawProjectiles();
-    
     // 5. Finally, draw the virtual hand/sword
     drawVirtualHand();
 }
@@ -298,61 +298,93 @@ void GameWidget::drawHandRange()
     glPopMatrix();
 }
 
+// Add this method near the other helper functions to get sword endpoints in world space
+void GameWidget::getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos)
+{
+    // Start with the hand position
+    float handX = m_handPosition.x() * 0.2f;
+    float handY = m_handPosition.y() * 0.2f;
+    
+    // Calculate handle position (base of sword) in world coordinates
+    handlePos = QVector3D(handX, handY + 0.75f, 0.75f);
+    
+    // Calculate tip position by applying the same transformations as in drawVirtualHand
+    // but manually calculating the endpoint instead of using OpenGL transforms
+    
+    // Rotation angles from drawVirtualHand
+    float rotZ = 20.0f * M_PI / 180.0f;  // 20° in radians
+    float rotY = -30.0f * M_PI / 180.0f; // -30° in radians
+    
+    // Sword length in world units (scaled from model units)
+    float swordLength = 18.0f * 0.035f; // blade length * scale factor
+    
+    // Calculate the tip position by applying the rotations to a vector pointing upward
+    // First calculate direction vector (normalized)
+    QVector3D direction(0.0f, swordLength, 0.0f);
+    
+    // Apply Z rotation
+    float tempX = direction.x() * cos(rotZ) - direction.y() * sin(rotZ);
+    float tempY = direction.x() * sin(rotZ) + direction.y() * cos(rotZ);
+    direction.setX(tempX);
+    direction.setY(tempY);
+    
+    // Apply Y rotation
+    tempX = direction.x() * cos(rotY) + direction.z() * sin(rotY);
+    float tempZ = -direction.x() * sin(rotY) + direction.z() * cos(rotY);
+    direction.setX(tempX);
+    direction.setZ(tempZ);
+    
+    // Calculate tip position by adding direction vector to handle position
+    tipPos = handlePos + direction;
+    
+    // This publishes the handle and tip positions for collision detection
+    emit swordPositionUpdated(handlePos, tipPos);
+}
+
 // Adjust virtual hand position to be closer to the screen
 void GameWidget::drawVirtualHand()
 {
     glPushMatrix();
     
     // Map hand position with more responsive tracking
-    // Use only relative hand movement without fixed offsets
-    float handX = m_handPosition.x() * 0.2f;  // Scale for horizontal movement
-    float handY = m_handPosition.y() * 0.2f;  // Scale for vertical movement
+    float handX = m_handPosition.x() * 0.2f;
+    float handY = m_handPosition.y() * 0.2f;
     
-    // Position the sword at the hit zone with no arbitrary offsets
-    // This ensures position is truly based on player's hand movement
+    // Position sword in the hit zone
     glTranslatef(
-        handX,          // X position directly from hand tracking (scaled)
-        handY + 0.75f,  // Y position with small elevation so sword isn't at floor level
-        0.75f           // Z position in middle of hit zone (0.0-1.5)
+        handX,          
+        handY + 0.75f,  
+        0.75f           
     );
     
-    // Apply moderate rotation for a natural sword orientation
-    glRotatef(20.0f, 0.0f, 0.0f, 1.0f);   // Minor z-axis tilt
-    glRotatef(-30.0f, 0.0f, 1.0f, 0.0f);  // Natural angle toward camera
+    // Calculate and emit sword endpoints for collision detection
+    QVector3D handlePos, tipPos;
+    getSwordEndpoints(handlePos, tipPos);
     
-    // Scale to ensure complete sword fits in view - smaller scale for better visibility
+    // Apply rotation for natural sword orientation
+    // IMPORTANT: These rotations must match those used in GameEngine::updateHandPosition
+    // to calculate the sword tip position
+    glRotatef(20.0f, 0.0f, 0.0f, 1.0f);
+    glRotatef(-30.0f, 0.0f, 1.0f, 0.0f);
+    
+    // Scale to proper sword size - should match the SWORD_LENGTH in GameEngine
     glScalef(0.035f, 0.035f, 0.035f);
     
     glDisable(GL_LIGHTING);
     
-    // Draw a complete, improved sword that's fully visible
-    // 1. Draw the blade with more detailed shape
+    // Draw sword with clear blade length that matches collision detection
     glColor3f(0.95f, 0.95f, 1.0f); // Silver color
+    
+    // Draw handle at origin (this is the sword handle in collision detection)
     glBegin(GL_QUADS);
-        // Main blade with tapered shape
-        glVertex3f(-1.0f, -2.0f, 0.0f);  // Bottom left at negative y
-        glVertex3f( 1.0f, -2.0f, 0.0f);  // Bottom right at negative y
-        glVertex3f( 0.5f, 15.0f, 0.0f);  // Top right
-        glVertex3f(-0.5f, 15.0f, 0.0f);  // Top left
-    glEnd();
-    
-    // Add blade tip as separate triangle
-    glBegin(GL_TRIANGLES);
-        glVertex3f(-0.5f, 15.0f, 0.0f);  // Left
-        glVertex3f( 0.5f, 15.0f, 0.0f);  // Right
-        glVertex3f( 0.0f, 18.0f, 0.0f);  // Tip
-    glEnd();
-    
-    // Draw blade edge highlight - more visible
-    glColor3f(1.0f, 1.0f, 1.0f);
-    glLineWidth(1.5f);
-    glBegin(GL_LINES);
-        glVertex3f(0.0f, -2.0f, 0.01f);   // Start at hilt
-        glVertex3f(0.0f, 18.0f, 0.01f);   // Go to tip
+        glVertex3f(-0.8f, -8.0f, 0.0f);
+        glVertex3f( 0.8f, -8.0f, 0.0f);
+        glVertex3f( 0.8f, -2.5f, 0.0f);
+        glVertex3f(-0.8f, -2.5f, 0.0f);
     glEnd();
     
     // Draw crossguard
-    glColor3f(0.85f, 0.7f, 0.25f); // Gold color
+    glColor3f(0.85f, 0.7f, 0.25f);
     glBegin(GL_QUADS);
         glVertex3f(-3.0f, -2.5f, 0.0f);
         glVertex3f( 3.0f, -2.5f, 0.0f);
@@ -360,7 +392,31 @@ void GameWidget::drawVirtualHand()
         glVertex3f(-3.0f, -1.5f, 0.0f);
     glEnd();
     
-    // Draw handle
+    // Draw the blade (this should match collision detection length)
+    glColor3f(0.95f, 0.95f, 1.0f);
+    glBegin(GL_QUADS);
+        glVertex3f(-1.0f, -2.0f, 0.0f);
+        glVertex3f( 1.0f, -2.0f, 0.0f);
+        glVertex3f( 0.5f, 15.0f, 0.0f); // Blade extends to y=15
+        glVertex3f(-0.5f, 15.0f, 0.0f);
+    glEnd();
+    
+    // Add blade tip triangle
+    glBegin(GL_TRIANGLES);
+        glVertex3f(-0.5f, 15.0f, 0.0f);
+        glVertex3f( 0.5f, 15.0f, 0.0f);
+        glVertex3f( 0.0f, 18.0f, 0.0f); // Tip at y=18
+    glEnd();
+    
+    // Draw blade edge highlight
+    glColor3f(1.0f, 1.0f, 1.0f);
+    glLineWidth(1.5f);
+    glBegin(GL_LINES);
+        glVertex3f(0.0f, -2.0f, 0.01f); // Start at hilt
+        glVertex3f(0.0f, 18.0f, 0.01f); // Go to tip at y=18
+    glEnd();
+    
+    // Rest of the drawing code (handle details, etc.)
     glColor3f(0.45f, 0.3f, 0.15f); // Dark brown
     glBegin(GL_QUADS);
         glVertex3f(-0.8f, -8.0f, 0.0f);  // Bottom

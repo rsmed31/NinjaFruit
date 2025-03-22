@@ -26,8 +26,8 @@ public:
     // Update position based on elapsed time
     void update(float deltaTime);
     
-    // Check if projectile is within the specified distance from a point
-    bool isColliding(const QVector3D& point, float collisionDistance) const;
+    // Replace old collision method with one that uses sword geometry
+    bool isColliding(const QVector3D& swordHandle, const QVector3D& swordTip) const;
     
     // Split the projectile (when hit by player)
     void split();
