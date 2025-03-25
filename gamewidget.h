@@ -99,6 +99,15 @@ private:
     QOpenGLVertexArrayObject m_vao;
     QOpenGLBuffer m_vertexBuffer;
     QOpenGLBuffer m_indexBuffer;
+    
+    // Draw the hit cylinder
+    void drawHitCylinder();
+    
+    // Spawn projectiles that will pass through the hit zone
+    void configureProjectileTrajectory(ProjectileRenderData& projectile);
+    
+    // Check collision between hand and projectiles within hit zone
+    void checkHitZoneCollisions();
 };
 
 #endif // GAMEWIDGET_H

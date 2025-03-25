@@ -6,6 +6,7 @@ extern "C" {
 #include <QtMath>
 #include <QDateTime>
 #include <QDebug>
+#include <QRandomGenerator> // Add this include for random number generation
 
 // Vertex data for drawing primitives
 static const GLfloat cylinderVertices[] = {
@@ -109,32 +110,31 @@ void GameWidget::paintGL()
     // 1. Set up field of view
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    // Use 75 degree FOV - better balance between wide view and depth perception
-    gluPerspective(75.0, width() / static_cast<float>(height()), 0.1, 100.0);
+    // Use 95 degree FOV for wider view to see incoming objects better
+    gluPerspective(95.0, width() / static_cast<float>(height()), 0.1, 100.0);
     
-    // 2. Use a first-person view with adjusted camera position
-    // Position camera higher up to see more floor
+    // 2. Move camera for better first-person view
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     gluLookAt(
-        0.0, 2.5, 3.0,    // Higher eye position (y=2.5 instead of 1.7)
-        0.0, 1.0, -10.0,  // Look down more toward the floor 
-        0.0, 1.0, 0.0     // Up vector
+        0.0, 1.8, 6.0,      // Move camera closer (z=6.0 instead of 8.0)
+        0.0, 1.0, -30.0,    // Look further down the z-axis for better depth
+        0.0, 1.0, 0.0       // Up vector
     );
     
-    // 3. Lighting setup (unchanged)
+    // 3. Lighting setup
     glEnable(GL_LIGHTING);
-    GLfloat light_position[] = {0.0f, 5.0f, 0.0f, 1.0f};
+    GLfloat light_position[] = {0.0f, 5.0f, 5.0f, 1.0f};  // Move light closer to camera
     glLightfv(GL_LIGHT0, GL_POSITION, light_position);
     
-    // 4. Draw floor, hit range and projectiles
+    // 4. Draw game elements
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
     drawDistanceIndicators();
-    drawProjectiles();   // Draw the semi-cylindrical hit zone
+    drawHitCylinder();       // Draw proper 3D hit zone cylinder
     drawProjectiles();
-    // 5. Finally, draw the virtual hand/sword
-    drawVirtualHand();
+    drawVirtualHand();       // Draw sword last so it appears on top
 }
 
 void GameWidget::resizeGL(int width, int height)
@@ -150,6 +150,9 @@ void GameWidget::updateScene()
     // Track elapsed time
     m_elapsedTime += 0.016f; // ~16ms per frame at 60 FPS
     
+    // Check for sword-projectile collisions
+    checkHitZoneCollisions();
+    
     // Update projectile positions based on physics
     updateProjectilePositions();
     
@@ -161,10 +164,33 @@ void GameWidget::launchProjectile(const QVector3D& position, const QVector3D& ve
 {
     ProjectileRenderData projectile;
     projectile.position = position;
-    projectile.velocity = velocity;
+    
+    // Modify velocity to ensure projectiles head toward the screen
+    // Start with the provided velocity but adjust it to target the hit zone
+    QVector3D adjustedVelocity = velocity;
+    
+    // Push projectile forward toward the player with a minimum z-velocity
+    if (adjustedVelocity.z() > -5.0f) {
+        adjustedVelocity.setZ(-5.0f - (QRandomGenerator::global()->bounded(5)));  // Ensure strong forward momentum
+    }
+    
+    // Reduce extreme lateral movements
+    if (qAbs(adjustedVelocity.x()) > 8.0f) {
+        adjustedVelocity.setX(adjustedVelocity.x() > 0 ? 8.0f : -8.0f);
+    }
+    
+    // Ensure upward launch to give time to hit them
+    if (adjustedVelocity.y() < 2.0f) {
+        adjustedVelocity.setY(2.0f + (QRandomGenerator::global()->bounded(4)));
+    }
+    
+    projectile.velocity = adjustedVelocity;
     projectile.spawnTime = m_elapsedTime;
     projectile.active = true;
     projectile.state = ProjectileRenderData::ACTIVE;
+    
+    // Verify the projectile will actually reach the screen
+    configureProjectileTrajectory(projectile);
     
     m_projectiles.append(projectile);
 }
@@ -273,53 +299,119 @@ void GameWidget::drawDistanceIndicators()
     glEnable(GL_LIGHTING);
 }
 
-void GameWidget::drawHandRange()
+// Replace drawHandRange with a proper 3D cylindrical hit zone
+void GameWidget::drawHitCylinder()
 {
-    glPushMatrix();
-    // Position the range in front of the player
-    glTranslatef(0.0f, 0.0f, 14.0f);
+    glDisable(GL_LIGHTING);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glColor4f(0.2f, 0.4f, 0.9f, 0.3f);
     
-    glBegin(GL_TRIANGLE_FAN);
-      glVertex3f(0.0f, 0.01f, 0.0f); // center of semicircle
-      // Draw semi-circle from -90° to 90°
-      for (int angle = -90; angle <= 90; angle += 5) {
-          float rad = angle * M_PI / 180.0f;
-          float radius = 15.0f; // Desired radius of the slicing region
-          float x = radius * cos(rad);
-          float z = radius * sin(rad);
-          glVertex3f(x, 0.01f, z);
-      }
+    // Position the hit cylinder directly in front of the camera
+    // This is the region where sword slicing is detected
+    glPushMatrix();
+    
+    // Move the cylinder to a position that makes sense for gameplay
+    // Center at player's position, extending forward
+    glTranslatef(0.0f, 1.0f, 3.0f);
+    
+    // Parameters for the hit cylinder
+    const float cylinderRadius = 4.0f;
+    const float cylinderHeight = 3.0f;
+    const int cylinderSegments = 20;
+    
+    // Draw a semi-cylindrical hit zone (wireframe with transparency)
+    glColor4f(0.3f, 0.8f, 1.0f, 0.25f);  // Light blue, mostly transparent
+    
+    // Draw the curved surface of the semi-cylinder
+    glBegin(GL_TRIANGLE_STRIP);
+    for (int i = 0; i <= cylinderSegments; i++) {
+        float angle = M_PI * (1.0f - (float)i / cylinderSegments);
+        float x = cylinderRadius * cos(angle);
+        float z = cylinderRadius * sin(angle);
+        
+        // Bottom vertex
+        glVertex3f(x, 0.0f, z);
+        // Top vertex
+        glVertex3f(x, cylinderHeight, z);
+    }
     glEnd();
     
-    glDisable(GL_BLEND);
+    // Draw wireframe overlay for better visibility
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glColor4f(0.5f, 1.0f, 1.0f, 0.8f);  // Brighter blue, more opaque
+    glLineWidth(1.5f);
+    
+    // Draw curved surface wireframe
+    glBegin(GL_LINE_STRIP);
+    for (int i = 0; i <= cylinderSegments; i++) {
+        float angle = M_PI * (1.0f - (float)i / cylinderSegments);
+        float x = cylinderRadius * cos(angle);
+        float z = cylinderRadius * sin(angle);
+        glVertex3f(x, 0.0f, z);
+    }
+    glEnd();
+    
+    glBegin(GL_LINE_STRIP);
+    for (int i = 0; i <= cylinderSegments; i++) {
+        float angle = M_PI * (1.0f - (float)i / cylinderSegments);
+        float x = cylinderRadius * cos(angle);
+        float z = cylinderRadius * sin(angle);
+        glVertex3f(x, cylinderHeight, z);
+    }
+    glEnd();
+    
+    // Draw vertical lines
+    for (int i = 0; i <= cylinderSegments; i += 4) {
+        float angle = M_PI * (1.0f - (float)i / cylinderSegments);
+        float x = cylinderRadius * cos(angle);
+        float z = cylinderRadius * sin(angle);
+        
+        glBegin(GL_LINES);
+        glVertex3f(x, 0.0f, z);
+        glVertex3f(x, cylinderHeight, z);
+        glEnd();
+    }
+    
+    // Add a "HIT ZONE" label using simple lines
+    glColor4f(1.0f, 1.0f, 1.0f, 0.9f);
+    glPushMatrix();
+    glTranslatef(0.0f, cylinderHeight / 2.0f, cylinderRadius - 0.1f);
+    glScalef(0.5f, 0.5f, 0.5f);
+    // Draw a simple marker
+    glBegin(GL_LINES);
+    glVertex3f(-1.0f, 0.0f, 0.0f);
+    glVertex3f(1.0f, 0.0f, 0.0f);
+    glEnd();
     glPopMatrix();
+    
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    glLineWidth(1.0f);
+    glPopMatrix();
+    
+    glDisable(GL_BLEND);
+    glEnable(GL_LIGHTING);
 }
 
 // Add this method near the other helper functions to get sword endpoints in world space
 void GameWidget::getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos)
 {
     // Start with the hand position
-    float handX = m_handPosition.x() * 0.2f;
-    float handY = m_handPosition.y() * 0.2f;
+    float handX = m_handPosition.x() * 0.25f;  // Match scale in drawVirtualHand
+    float handY = m_handPosition.y() * 0.25f;
     
     // Calculate handle position (base of sword) in world coordinates
-    handlePos = QVector3D(handX, handY + 0.75f, 0.75f);
+    // Match the translation in drawVirtualHand
+    handlePos = QVector3D(handX, handY + 0.5f, 3.0f);
     
-    // Calculate tip position by applying the same transformations as in drawVirtualHand
-    // but manually calculating the endpoint instead of using OpenGL transforms
-    
-    // Rotation angles from drawVirtualHand
-    float rotZ = 20.0f * M_PI / 180.0f;  // 20° in radians
-    float rotY = -30.0f * M_PI / 180.0f; // -30° in radians
+    // Rotation angles from drawVirtualHand (should match exactly)
+    float rotZ = 15.0f * M_PI / 180.0f;  // 15° in radians
+    float rotY = -20.0f * M_PI / 180.0f; // -20° in radians
     
     // Sword length in world units (scaled from model units)
-    float swordLength = 18.0f * 0.035f; // blade length * scale factor
+    float swordScale = 0.045f;  // Match the scale in drawVirtualHand
+    float swordLength = 18.0f * swordScale; // blade length * scale factor
     
     // Calculate the tip position by applying the rotations to a vector pointing upward
-    // First calculate direction vector (normalized)
     QVector3D direction(0.0f, swordLength, 0.0f);
     
     // Apply Z rotation
@@ -341,41 +433,40 @@ void GameWidget::getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos)
     emit swordPositionUpdated(handlePos, tipPos);
 }
 
-// Adjust virtual hand position to be closer to the screen
+// Adjust virtual hand position to be much closer to the camera
 void GameWidget::drawVirtualHand()
 {
     glPushMatrix();
     
     // Map hand position with more responsive tracking
-    float handX = m_handPosition.x() * 0.2f;
-    float handY = m_handPosition.y() * 0.2f;
+    float handX = m_handPosition.x() * 0.25f;  // Scale factor increased for better movement
+    float handY = m_handPosition.y() * 0.25f;
     
-    // Position sword in the hit zone
+    // Position sword closer to camera for better first-person feel
+    // Move z value closer to camera (from 0.75f to 3.0f)
     glTranslatef(
-        handX,          
-        handY + 0.75f,  
-        0.75f           
+        handX,           
+        handY + 0.5f,    // Lower position to see more of the sword
+        3.0f             // Much closer to camera for first-person feel
     );
     
     // Calculate and emit sword endpoints for collision detection
     QVector3D handlePos, tipPos;
     getSwordEndpoints(handlePos, tipPos);
     
-    // Apply rotation for natural sword orientation
-    // IMPORTANT: These rotations must match those used in GameEngine::updateHandPosition
-    // to calculate the sword tip position
-    glRotatef(20.0f, 0.0f, 0.0f, 1.0f);
-    glRotatef(-30.0f, 0.0f, 1.0f, 0.0f);
+    // Adjust rotation for more natural sword orientation
+    glRotatef(15.0f, 0.0f, 0.0f, 1.0f);  // Less tilt on Z axis
+    glRotatef(-20.0f, 0.0f, 1.0f, 0.0f); // Less rotation on Y axis
     
-    // Scale to proper sword size - should match the SWORD_LENGTH in GameEngine
-    glScalef(0.035f, 0.035f, 0.035f);
+    // Increase scale for bigger sword appearance
+    float swordScale = 0.045f;  // Increased from 0.035f
+    glScalef(swordScale, swordScale, swordScale);
     
     glDisable(GL_LIGHTING);
     
-    // Draw sword with clear blade length that matches collision detection
-    glColor3f(0.95f, 0.95f, 1.0f); // Silver color
-    
-    // Draw handle at origin (this is the sword handle in collision detection)
+    // Draw sword with more detailed appearance
+    // Handle
+    glColor3f(0.45f, 0.3f, 0.15f);  // Dark brown
     glBegin(GL_QUADS);
         glVertex3f(-0.8f, -8.0f, 0.0f);
         glVertex3f( 0.8f, -8.0f, 0.0f);
@@ -383,8 +474,8 @@ void GameWidget::drawVirtualHand()
         glVertex3f(-0.8f, -2.5f, 0.0f);
     glEnd();
     
-    // Draw crossguard
-    glColor3f(0.85f, 0.7f, 0.25f);
+    // Crossguard with metallic appearance
+    glColor3f(0.9f, 0.8f, 0.3f);  // Brighter gold
     glBegin(GL_QUADS);
         glVertex3f(-3.0f, -2.5f, 0.0f);
         glVertex3f( 3.0f, -2.5f, 0.0f);
@@ -392,41 +483,32 @@ void GameWidget::drawVirtualHand()
         glVertex3f(-3.0f, -1.5f, 0.0f);
     glEnd();
     
-    // Draw the blade (this should match collision detection length)
-    glColor3f(0.95f, 0.95f, 1.0f);
+    // Blade with metallic sheen
+    glColor3f(0.95f, 0.95f, 1.0f);  // Bright silver color
     glBegin(GL_QUADS);
         glVertex3f(-1.0f, -2.0f, 0.0f);
         glVertex3f( 1.0f, -2.0f, 0.0f);
-        glVertex3f( 0.5f, 15.0f, 0.0f); // Blade extends to y=15
+        glVertex3f( 0.5f, 15.0f, 0.0f);
         glVertex3f(-0.5f, 15.0f, 0.0f);
     glEnd();
     
-    // Add blade tip triangle
+    // Blade tip
     glBegin(GL_TRIANGLES);
         glVertex3f(-0.5f, 15.0f, 0.0f);
         glVertex3f( 0.5f, 15.0f, 0.0f);
-        glVertex3f( 0.0f, 18.0f, 0.0f); // Tip at y=18
+        glVertex3f( 0.0f, 18.0f, 0.0f);
     glEnd();
     
-    // Draw blade edge highlight
+    // Blade edge highlight
     glColor3f(1.0f, 1.0f, 1.0f);
     glLineWidth(1.5f);
     glBegin(GL_LINES);
-        glVertex3f(0.0f, -2.0f, 0.01f); // Start at hilt
-        glVertex3f(0.0f, 18.0f, 0.01f); // Go to tip at y=18
+        glVertex3f(0.0f, -2.0f, 0.01f);
+        glVertex3f(0.0f, 18.0f, 0.01f);
     glEnd();
     
-    // Rest of the drawing code (handle details, etc.)
-    glColor3f(0.45f, 0.3f, 0.15f); // Dark brown
-    glBegin(GL_QUADS);
-        glVertex3f(-0.8f, -8.0f, 0.0f);  // Bottom
-        glVertex3f( 0.8f, -8.0f, 0.0f);  // Bottom
-        glVertex3f( 0.8f, -2.5f, 0.0f);  // Top
-        glVertex3f(-0.8f, -2.5f, 0.0f);  // Top
-    glEnd();
-    
-    // Draw handle wrap details
-    glColor3f(0.3f, 0.2f, 0.1f); // Darker brown
+    // Handle wrap details
+    glColor3f(0.3f, 0.2f, 0.1f);
     for (int i = -7; i <= -3; i++) {
         float y = i * 1.0f;
         glBegin(GL_LINES);
@@ -435,13 +517,13 @@ void GameWidget::drawVirtualHand()
         glEnd();
     }
     
-    // Draw pommel
-    glColor3f(0.85f, 0.7f, 0.25f); // Match guard color
+    // Pommel
+    glColor3f(0.9f, 0.8f, 0.3f);
     glBegin(GL_QUADS);
-        glVertex3f(-1.2f, -9.0f, 0.0f); // Bottom
-        glVertex3f( 1.2f, -9.0f, 0.0f); // Bottom
-        glVertex3f( 1.2f, -8.0f, 0.0f); // Top
-        glVertex3f(-1.2f, -8.0f, 0.0f); // Top
+        glVertex3f(-1.2f, -9.0f, 0.0f);
+        glVertex3f( 1.2f, -9.0f, 0.0f);
+        glVertex3f( 1.2f, -8.0f, 0.0f);
+        glVertex3f(-1.2f, -8.0f, 0.0f);
     glEnd();
     
     glLineWidth(1.0f);
@@ -495,7 +577,6 @@ void GameWidget::drawProjectiles()
         }
         else if (proj.state == ProjectileRenderData::SPLIT) {
             // Split projectile visualization (keeping the existing code)
-            // ...existing split drawing code...
             float splitTime = m_elapsedTime - proj.spawnTime - 0.1f;
             
             glDisable(GL_LIGHTING);
@@ -622,4 +703,127 @@ QVector3D GameWidget::calculateProjectilePosition(const ProjectileRenderData& pr
     // position = initialPosition + velocity*time + 0.5*acceleration*time^2
     const QVector3D gravity(0.0f, -9.8f, 0.0f);
     return proj.position + proj.velocity * time + 0.5f * gravity * time * time;
+}
+
+// Add this helper method to ensure projectiles will reach the hit zone
+void GameWidget::configureProjectileTrajectory(ProjectileRenderData& projectile)
+{
+    // Calculate if projectile will reach hit zone (z between 0 and 5)
+    // Using projectile motion equations
+    float timeToHitZone = 0.0f;
+    bool willHitZone = false;
+    
+    // Solve for time when z coordinate will be in hit zone range
+    // z = z₀ + v₀t + 0.5at²
+    // For z axis, we have: z = z₀ + v_z*t (no gravity in z direction)
+    
+    // Time to reach back of hit zone (z = 0)
+    if (projectile.velocity.z() < 0) {  // Only if moving toward screen
+        float timeToBackOfZone = (0.0f - projectile.position.z()) / projectile.velocity.z();
+        float timeToFrontOfZone = (5.0f - projectile.position.z()) / projectile.velocity.z();
+        
+        // Projectile passes through hit zone if timeToBackOfZone > 0
+        if (timeToBackOfZone > 0.0f) {
+            // Choose the time in the middle of the zone
+            timeToHitZone = (timeToBackOfZone + timeToFrontOfZone) / 2.0f;
+            willHitZone = true;
+        }
+    }
+    
+    // If projectile won't reach hit zone, adjust its trajectory
+    if (!willHitZone) {
+        // Set a target position in the hit zone
+        float targetZ = 3.0f;  // Middle of hit zone
+        float targetX = QRandomGenerator::global()->bounded(6) - 3;  // Random x between -3 and 3
+        float targetY = 1.0f + (QRandomGenerator::global()->bounded(3));  // Random height between 1 and 4
+        
+        // Calculate time to reach target (based on z-velocity)
+        const float desiredTime = 2.0f;  // 2 seconds to reach target
+        
+        // Calculate required velocity
+        projectile.velocity.setZ((targetZ - projectile.position.z()) / desiredTime);
+        projectile.velocity.setX((targetX - projectile.position.x()) / desiredTime);
+        
+        // Account for gravity when setting y velocity: v_y = (y - y₀)/t + 0.5*g*t
+        projectile.velocity.setY((targetY - projectile.position.y()) / desiredTime + 
+                                 0.5f * 9.8f * desiredTime);
+    }
+}
+
+// Add this method to detect collisions between sword and projectiles in the hit zone
+void GameWidget::checkHitZoneCollisions()
+{
+    // Get current sword position
+    QVector3D handlePos, tipPos;
+    getSwordEndpoints(handlePos, tipPos);
+    
+    // Define the hit cylinder parameters (match drawHitCylinder)
+    const float cylinderRadius = 4.0f;
+    const float cylinderHeight = 3.0f;
+    const QVector3D cylinderCenter(0.0f, 1.0f, 3.0f); // Match the translation in drawHitCylinder
+    
+    // Check each projectile
+    QMutableListIterator<ProjectileRenderData> i(m_projectiles);
+    int index = 0;
+    
+    while (i.hasNext()) {
+        ProjectileRenderData &proj = i.next();
+        
+        if (proj.state != ProjectileRenderData::ACTIVE) {
+            index++;
+            continue;
+        }
+        
+        // Calculate current projectile position
+        float timeActive = m_elapsedTime - proj.spawnTime;
+        QVector3D projPos = calculateProjectilePosition(proj, timeActive);
+        
+        // 1. First check if projectile is in hit cylinder (semi-cylindrical zone)
+        // Distance from cylinder center axis (x and z only)
+        float dx = projPos.x() - cylinderCenter.x();
+        float dz = projPos.z() - cylinderCenter.z();
+        float distanceFromAxis = sqrt(dx*dx + dz*dz);
+        
+        // Check if projectile is within cylinder radius and height and in front half
+        bool inCylinderRadius = distanceFromAxis <= cylinderRadius;
+        bool inCylinderHeight = projPos.y() >= cylinderCenter.y() && 
+                               projPos.y() <= cylinderCenter.y() + cylinderHeight;
+        bool inFrontHalf = projPos.z() >= cylinderCenter.z();
+        
+        // If within hit cylinder, check for sword collision
+        if (inCylinderRadius && inCylinderHeight && inFrontHalf) {
+            // 2. Check if sword intersects with projectile
+            // Simplified sword collision using line-sphere intersection
+            // Treat projectile as a sphere
+            const float projectileRadius = 0.5f;
+            
+            // Calculate closest point on sword line segment to projectile center
+            QVector3D swordVector = tipPos - handlePos;
+            float swordLength = swordVector.length();
+            QVector3D swordDirection = swordVector / swordLength;
+            
+            // Vector from handle to projectile
+            QVector3D handleToProj = projPos - handlePos;
+            
+            // Project handleToProj onto swordDirection
+            float projectionLength = QVector3D::dotProduct(handleToProj, swordDirection);
+            
+            // Clamp projection to sword segment
+            projectionLength = qMax(0.0f, qMin(projectionLength, swordLength));
+            
+            // Closest point on sword line to projectile
+            QVector3D closestPointOnSword = handlePos + swordDirection * projectionLength;
+            
+            // Distance from closest point to projectile center
+            float distance = (closestPointOnSword - projPos).length();
+            
+            // If distance is less than projectile radius, we have a hit
+            if (distance <= projectileRadius) {
+                // Split the projectile
+                splitProjectile(index);
+            }
+        }
+        
+        index++;
+    }
 }
