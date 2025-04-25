@@ -194,6 +194,9 @@ void MainWindow::setupConnections()
     connect(gameEngine, &GameEngine::livesChanged, this, &MainWindow::updateLives);
     connect(gameEngine, &GameEngine::timeChanged, this, &MainWindow::updateTimer);
     connect(gameEngine, &GameEngine::gameOver, this, &MainWindow::onGameOver);
+    
+    // Connect GameWidget's score updates
+    connect(gameWidget, &GameWidget::scoreChanged, gameEngine, &GameEngine::addScore);
     connect(gameEngine, &GameEngine::projectileAdded, 
             [this](const Projectile& proj) {
                 gameWidget->launchProjectile(proj.getPosition(), proj.getVelocity());
@@ -377,12 +380,16 @@ void MainWindow::mapHandToGameSpace(const cv::Point& handPos, float& gameX, floa
 
 void MainWindow::updateScore(int score)
 {
+    qDebug() << "Updating score to:" << score;
     scoreLabel->setText(QString("Score: %1").arg(score));
+    qDebug() << "Score label text set to:" << scoreLabel->text();
 }
 
 void MainWindow::updateLives(int lives)
 {
+    qDebug() << "Updating lives to:" << lives;
     livesLabel->setText(QString("Lives: %1").arg(lives));
+    qDebug() << "Lives label text set to:" << livesLabel->text();
 }
 
 void MainWindow::updateTimer(int seconds)

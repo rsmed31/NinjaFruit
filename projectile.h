@@ -27,7 +27,16 @@ public:
     
     // Replace old collision method with one that uses sword geometry
     bool isColliding(const QVector3D& swordHandle, const QVector3D& swordTip) const;
+    bool wasSliced() const { return m_wasSliced; }
+    void markAsSliced() { m_wasSliced = true; }
+    bool wasProcessed() const { return m_wasProcessed; }
+    void markAsProcessed() { m_wasProcessed = true; }
+
+private:
+    bool m_wasSliced = false;
+    bool m_wasProcessed = false;
     
+public:
     // Split the projectile (when hit by player)
     void split();
     

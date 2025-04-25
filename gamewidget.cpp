@@ -66,6 +66,10 @@ void GameWidget::setHandPosition(float x, float y)
 
 void GameWidget::initializeGL()
 {
+    // Suppress unused variable warnings
+    (void)cylinderVertices;
+    (void)cylinderIndices;
+
     initializeOpenGLFunctions();
     // Initialize OpenGL functions
     initializeOpenGLFunctions();
@@ -188,6 +192,18 @@ void GameWidget::launchProjectile(const QVector3D& position, const QVector3D& ve
     projectile.spawnTime = m_elapsedTime;
     projectile.active = true;
     projectile.state = ProjectileRenderData::ACTIVE;
+    
+    // Set random projectile type
+    int typeValue = QRandomGenerator::global()->bounded(100);
+    if (typeValue < 25) {
+        projectile.type = ProjectileRenderData::APPLE;
+    } else if (typeValue < 50) {
+        projectile.type = ProjectileRenderData::ORANGE;
+    } else if (typeValue < 75) {
+        projectile.type = ProjectileRenderData::BANANA;
+    } else {
+        projectile.type = ProjectileRenderData::WATERMELON;
+    }
     
     // Verify the projectile will actually reach the screen
     configureProjectileTrajectory(projectile);
@@ -682,18 +698,15 @@ void GameWidget::createGeometry()
 
 void GameWidget::updateProjectilePositions()
 {
-    // Update all projectiles, removing inactive ones
     QMutableListIterator<ProjectileRenderData> i(m_projectiles);
     while (i.hasNext()) {
         ProjectileRenderData &proj = i.next();
         
-        // Check if projectile has been active for too long or hit the ground
         float timeActive = m_elapsedTime - proj.spawnTime;
         QVector3D currentPos = calculateProjectilePosition(proj, timeActive);
         
-        if (timeActive > 10.0f || currentPos.y() < 0.0f) {
-            i.remove();
-        }
+        // ❌ DO NOT deactivate or remove based on Z or active time.
+        // ❌ Leave all projectiles active so that GameEngine can decide their fate.
     }
 }
 
@@ -710,7 +723,6 @@ void GameWidget::configureProjectileTrajectory(ProjectileRenderData& projectile)
 {
     // Calculate if projectile will reach hit zone (z between 0 and 5)
     // Using projectile motion equations
-    float timeToHitZone = 0.0f;
     bool willHitZone = false;
     
     // Solve for time when z coordinate will be in hit zone range
@@ -725,7 +737,7 @@ void GameWidget::configureProjectileTrajectory(ProjectileRenderData& projectile)
         // Projectile passes through hit zone if timeToBackOfZone > 0
         if (timeToBackOfZone > 0.0f) {
             // Choose the time in the middle of the zone
-            timeToHitZone = (timeToBackOfZone + timeToFrontOfZone) / 2.0f;
+            float timeToHitZone = (timeToBackOfZone + timeToFrontOfZone) / 2.0f;
             willHitZone = true;
         }
     }
@@ -819,8 +831,13 @@ void GameWidget::checkHitZoneCollisions()
             
             // If distance is less than projectile radius, we have a hit
             if (distance <= projectileRadius) {
-                // Split the projectile
-                splitProjectile(index);
+            // Split the projectile and update score
+            splitProjectile(index);
+            
+            // Fixed score value per slice
+            const int points = 10;
+            qDebug() << "Projectile sliced! Adding" << points << "points";
+            emit scoreChanged(points);
             }
         }
         

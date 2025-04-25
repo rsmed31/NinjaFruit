@@ -44,6 +44,9 @@ public:
     // Connect to GameWidget for sword position updates
     void connectToGameWidget(GameWidget* widget);
 
+    // Add score method declaration
+    void addScore(int points);
+
 signals:
     // UI update signals
     void scoreChanged(int score);

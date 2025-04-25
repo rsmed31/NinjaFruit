@@ -74,19 +74,32 @@ void GameEngine::resumeGame()
 
 void GameEngine::resetGame()
 {
+    // Stop all timers first
+    pauseGame();
+    
     // Reset game state
     m_score = 0;
     m_lives = MAX_LIVES;
     m_gameTime = GAME_DURATION;
     m_elapsedTime = 0.0f;
     
-    // Clear projectiles
-    m_projectiles.clear();
+    // Clear projectiles safely
+    while (!m_projectiles.isEmpty()) {
+        emit projectileRemoved(0);
+        m_projectiles.removeFirst();
+    }
+    
+    // Reset sword positions
+    m_swordHandle = QVector3D(0.0f, 0.0f, 0.0f);
+    m_swordTip = QVector3D(0.0f, 1.0f, 0.0f);
     
     // Emit signals for UI updates
     emit scoreChanged(m_score);
     emit livesChanged(m_lives);
     emit timeChanged(m_gameTime);
+    
+    // Reset game running state
+    m_gameRunning = false;
 }
 
 void GameEngine::updateHandPosition(const QVector3D& position)
@@ -146,11 +159,18 @@ void GameEngine::checkCollisions()
         
         // Use line segment collision detection with the actual sword geometry
         if (inHitZone && projectile.isColliding(m_swordHandle, m_swordTip)) {
+            qDebug() << "Collision detected with projectile" << i 
+                     << "at position" << pos 
+                     << "sword:" << m_swordHandle << "->" << m_swordTip;
+            
             // Mark projectile as sliced
             projectile.split();
+            projectile.markAsSliced();
             
             // Update score by adding projectile's point value
-            m_score += projectile.getPointValue();
+            int points = projectile.getPointValue();
+            m_score += points;
+            qDebug() << "Adding" << points << "points, new score:" << m_score;
             
             emit scoreChanged(m_score);
             emit projectileSplit(i);
@@ -160,42 +180,59 @@ void GameEngine::checkCollisions()
 
 void GameEngine::updateProjectiles(float deltaTime)
 {
-    // Update all projectiles, removing inactive ones
-    QMutableListIterator<Projectile> i(m_projectiles);
-    int index = 0;
+    // Create temporary list of projectiles to remove
+    QList<int> toRemove;
     
-    while (i.hasNext()) {
-        Projectile& projectile = i.next();
-        
-        // Update projectile physics
+    // First pass: update and check projectiles
+    for (int i = 0; i < m_projectiles.size(); i++) {
+        Projectile& projectile = m_projectiles[i];
         projectile.update(deltaTime);
-        
+
+        QVector3D pos = projectile.getPosition();
+
+        qDebug() << "Projectile" << i << "z:" << pos.z() << "state:" << projectile.getState() << "sliced:" << projectile.wasSliced();
+
+        // Only when projectile exits far enough (z >= 15)
+        if (pos.z() >= 15.0f && projectile.getState() == Projectile::ACTIVE) {
+            // First check if we need to deduct a life
+            if (!projectile.wasSliced() && !projectile.wasProcessed() && m_gameRunning) {
+                // MISS: lose 1 life
+                qDebug() << "MISSED - projectile" << i << "disappeared unsliced at z =" << pos.z();
+                qDebug() << "BEFORE lives:" << m_lives;
+                m_lives = qMax(0, m_lives - 1);
+                qDebug() << "AFTER lives:" << m_lives;
+                emit livesChanged(m_lives);
+                projectile.markAsProcessed();
+                
+                if (m_lives <= 0) {
+                    pauseGame();
+                    emit gameOver(m_score);
+                    break;
+                }
+            }
+            
+            // Mark projectile for removal
+            projectile.split();
+        }
+
         // Remove inactive projectiles
         if (projectile.getState() == Projectile::INACTIVE) {
-            emit projectileRemoved(index);
-            i.remove();
-        } else {
-            index++;
+            toRemove.prepend(i);
+        }
+    }
+    
+    // Second pass: remove projectiles safely
+    foreach (int i, toRemove) {
+        if (i >= 0 && i < m_projectiles.size()) {
+            emit projectileRemoved(i);
+            m_projectiles.removeAt(i);
         }
     }
 }
 
 Projectile GameEngine::createRandomProjectile()
 {
-    // Create a random projectile type
-    int typeValue = QRandomGenerator::global()->bounded(100);
-    Projectile::Type type;
-    
-    // Even distribution between fruits
-    if (typeValue < 25) {
-        type = Projectile::APPLE;
-    } else if (typeValue < 50) {
-        type = Projectile::ORANGE;
-    } else if (typeValue < 75) {
-        type = Projectile::BANANA;
-    } else {
-        type = Projectile::WATERMELON;
-    }
+    Projectile::Type type = Projectile::APPLE;
     
     Projectile projectile(type);
     
@@ -223,57 +260,30 @@ QVector3D GameEngine::generateRandomLaunchPosition()
 
 QVector3D GameEngine::generateRandomVelocity()
 {
-    // Almost no horizontal divergence to ensure projectiles stay on screen
-    float vx = (QRandomGenerator::global()->generateDouble() - 0.5) * 0.3f;  
+    // Calculate consistent trajectories that all reach z=15
+    float targetZ = 15.0f; // Consistent target distance
+    float targetX = (QRandomGenerator::global()->generateDouble() - 0.5f) * 2.0f; // Narrow x-range
+    float targetY = 1.2f; // Low consistent height
     
-    // Balanced upward component - enough arc without hitting floor
-    float vy = 5.0f + QRandomGenerator::global()->generateDouble() * 2.0f;
+    QVector3D startPos = generateRandomLaunchPosition();
     
-    // Controlled forward velocity ensures all projectiles reach hit zone
-    float vz = 12.5f + QRandomGenerator::global()->generateDouble() * 1.0f;
+    // Fixed flight time for consistent arcs
+    const float time = 2.5f;
+    
+    // Calculate velocity components
+    float vz = (targetZ - startPos.z()) / time;
+    float vx = (targetX - startPos.x()) / time;
+    
+    // Calculate vertical velocity to hit target height
+    float vy = (targetY - startPos.y() + 0.5f * 9.8f * time * time) / time;
     
     return QVector3D(vx, vy, vz);
 }
 
 void GameEngine::handleMissedProjectiles()
 {
-    const float HIT_MIN_X = -8.0f;
-    const float HIT_MAX_X = 8.0f;
-    const float HIT_MIN_Z = 0.0f;
-    const float HIT_MAX_Z = 1.5f;
-    
-    for (auto& projectile : m_projectiles) {
-        // Only process active projectiles
-        if (projectile.getState() != Projectile::ACTIVE) 
-            continue;
-            
-        QVector3D pos = projectile.getPosition();
-        
-        // Determine if projectile has passed through the hit zone
-        bool passedHitZone = pos.z() > HIT_MAX_Z;
-        
-        // Projectile has passed through visible hit zone without being sliced
-        if (passedHitZone) {
-            // Verify it was actually in the visible area (not off to sides or too high)
-            bool wasInVisibleRange = (pos.x() >= HIT_MIN_X && pos.x() <= HIT_MAX_X &&
-                                      pos.y() >= 0.1f && pos.y() <= 5.0f);
-            
-            // Mark as split for removal and visual effect
-            projectile.split();
-            
-            // Penalize for missing projectiles that were visible
-            if (wasInVisibleRange) {
-                m_lives--;
-                emit livesChanged(m_lives);
-                
-                // Check for game over
-                if (m_lives <= 0) {
-                    pauseGame();
-                    emit gameOver(m_score);
-                }
-            }
-        }
-    }
+    // This function is now empty since we handle missed projectiles
+    // in updateProjectiles() to avoid duplicate processing
 }
 
 void GameEngine::connectToGameWidget(GameWidget* widget)
@@ -281,6 +291,9 @@ void GameEngine::connectToGameWidget(GameWidget* widget)
     if (widget) {
         connect(widget, &GameWidget::swordPositionUpdated, 
                 this, &GameEngine::updateSwordPosition);
+        // Initialize sword positions to default values
+        m_swordHandle = QVector3D(0.0f, 0.0f, 0.0f);
+        m_swordTip = QVector3D(0.0f, 1.0f, 0.0f);
     }
 }
 
@@ -288,4 +301,11 @@ void GameEngine::updateSwordPosition(const QVector3D& handlePos, const QVector3D
 {
     m_swordHandle = handlePos;
     m_swordTip = tipPos;
+}
+
+void GameEngine::addScore(int points)
+{
+    m_score += points;
+    qDebug() << "Adding" << points << "points, new score:" << m_score;
+    emit scoreChanged(m_score);
 }

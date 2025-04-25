@@ -11,7 +11,7 @@ Projectile::Projectile(Type type)
     switch (type) {
         case APPLE:
             m_color = QColor(255, 0, 0);  // Bright Red
-            m_radius = 0.4f; // Slightly larger
+            m_radius = 0.6f; // Larger size for better visibility
             m_pointValue = 10;
             break;
         case ORANGE:
@@ -43,7 +43,7 @@ void Projectile::update(float deltaTime)
     // Update position
     m_position += m_velocity * deltaTime;
     
-    // If projectile has hit the ground, make it inactive
+    // If projectile has hit the ground or passed far plane (z >= 10.0), make it inactive
     if (m_position.y() < -0.1f && m_velocity.y() < 0) {
         m_state = INACTIVE;
     }

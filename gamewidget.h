@@ -37,6 +37,8 @@ public:
 signals:
     // Add this signal to notify when sword position changes
     void swordPositionUpdated(const QVector3D& handlePos, const QVector3D& tipPos);
+    void scoreChanged(int points);  // Properly declare the signal
+    void livesChanged(int lives);   // Signal for lives updates
 
 protected:
     // OpenGL functions that must be implemented
@@ -57,8 +59,10 @@ private:
         QVector3D velocity;
         float spawnTime;
         bool active;
-        enum State { ACTIVE, SPLIT, INACTIVE } state;
+        enum State { ACTIVE, SPLIT } state;
+        enum Type { APPLE, ORANGE, BANANA, WATERMELON } type;
     };
+
     QList<ProjectileRenderData> m_projectiles;
     
     // Camera and view properties
