@@ -11,8 +11,7 @@ public:
         APPLE,
         ORANGE,
         BANANA,
-        WATERMELON,
-        BOMB // special projectile that reduces lives when hit
+        WATERMELON
     };
     
     enum State {

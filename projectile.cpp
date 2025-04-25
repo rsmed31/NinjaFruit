@@ -29,11 +29,6 @@ Projectile::Projectile(Type type)
             m_radius = 0.6f; // Larger
             m_pointValue = 30;
             break;
-        case BOMB:
-            m_color = QColor(25, 25, 25);    // Almost Black
-            m_radius = 0.5f;
-            m_pointValue = -30; // Reduced penalty from -50 to -30
-            break;
     }
 }
 

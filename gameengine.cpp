@@ -149,12 +149,8 @@ void GameEngine::checkCollisions()
             // Mark projectile as sliced
             projectile.split();
             
-            // Update score based on projectile type
-            if (projectile.getType() == Projectile::BOMB) {
-                m_score = qMax(0, m_score - 30);
-            } else {
-                m_score += projectile.getPointValue();
-            }
+            // Update score by adding projectile's point value
+            m_score += projectile.getPointValue();
             
             emit scoreChanged(m_score);
             emit projectileSplit(i);
@@ -190,14 +186,12 @@ Projectile GameEngine::createRandomProjectile()
     int typeValue = QRandomGenerator::global()->bounded(100);
     Projectile::Type type;
     
-    // 10% chance of bomb, rest are fruits
-    if (typeValue < 10) {
-        type = Projectile::BOMB;
-    } else if (typeValue < 35) {
+    // Even distribution between fruits
+    if (typeValue < 25) {
         type = Projectile::APPLE;
-    } else if (typeValue < 60) {
+    } else if (typeValue < 50) {
         type = Projectile::ORANGE;
-    } else if (typeValue < 85) {
+    } else if (typeValue < 75) {
         type = Projectile::BANANA;
     } else {
         type = Projectile::WATERMELON;
@@ -267,8 +261,8 @@ void GameEngine::handleMissedProjectiles()
             // Mark as split for removal and visual effect
             projectile.split();
             
-            // Only penalize for missing fruits (not bombs) that were visible
-            if (wasInVisibleRange && projectile.getType() != Projectile::BOMB) {
+            // Penalize for missing projectiles that were visible
+            if (wasInVisibleRange) {
                 m_lives--;
                 emit livesChanged(m_lives);
                 
