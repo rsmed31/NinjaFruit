@@ -12,6 +12,7 @@ MainWindow::MainWindow(QWidget *parent)
     , handDetector(new HandDetector())
     , gameEngine(new GameEngine(this))
     , handPosWidget(nullptr)
+    , multiPositionCheck(nullptr)  // Initialize the checkbox pointer
 {
     // Now set up UI that uses handDetector
     setupUI();
@@ -103,6 +104,16 @@ void MainWindow::setupUI()
     welcomeLayout->addSpacing(20);
     welcomeLayout->addLayout(welcomeMiddleLayout);
     welcomeLayout->addStretch();
+    
+    // Add multi-position calibration checkbox to welcome screen
+    multiPositionCheck = new QCheckBox("Enable multi-position hand calibration");
+    multiPositionCheck->setObjectName("multiPositionCheck");
+    welcomeLayout->addWidget(multiPositionCheck);
+    connect(multiPositionCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        if (calibrationWidget) {
+            calibrationWidget->enableMultiPositionCapture(checked);
+        }
+    });
     
     // 2. Create game screen with improved layout
     gameScreen = new QWidget();
@@ -223,6 +234,11 @@ void MainWindow::startCalibration()
     // Stop the processing timer if it's running
     processingTimer.stop();
     
+    // Use the member variable directly instead of findChild
+    if (calibrationWidget) {
+        calibrationWidget->enableMultiPositionCapture(multiPositionCheck->isChecked());
+    }
+    
     // Connect calibration complete signal
     connect(calibrationWidget, &CalibrationWidget::calibrationFinished,
             this, &MainWindow::onCalibrationFinished, Qt::UniqueConnection);
@@ -293,7 +309,12 @@ void MainWindow::exitGame()
 void MainWindow::processFrame()
 {
     if (!camera.isOpened()) {
-        qDebug() << "❌ Camera not open in processFrame()";
+        return;
+    }
+    
+    // PERFORMANCE OPTIMIZATION: Skip some frames when laggy
+    static int frameSkipCounter = 0;
+    if (++frameSkipCounter % 2 != 0) { // Process every other frame
         return;
     }
     
@@ -302,10 +323,6 @@ void MainWindow::processFrame()
     camera >> frame;
     
     if (frame.empty()) {
-        static int emptyFrameCount = 0;
-        if (++emptyFrameCount % 30 == 0) {
-            qDebug() << "❌ Received empty frame from camera";
-        }
         return;
     }
     
@@ -316,15 +333,8 @@ void MainWindow::processFrame()
     cv::Point handPos(-1, -1);
     try {
         handPos = handDetector->detectHand(currentFrame);
-        
-        // Log hand detection result periodically
-        static int frameCount = 0;
-        if (++frameCount % 30 == 0) {
-            qDebug() << "Hand detection result:" << handPos.x << handPos.y;
-        }
     }
-    catch (const std::exception& e) {
-        qDebug() << "❌ Exception in hand detection:" << e.what();
+    catch (const std::exception&) {
         handPos = cv::Point(-1, -1);
     }
     
@@ -339,47 +349,36 @@ void MainWindow::processFrame()
         gameEngine->updateHandPosition(QVector3D(gameX, gameY, 0.75f));
         gameWidget->setHandPosition(gameX, gameY);
         
-        // Draw detection visualization
-        cv::circle(currentFrame, handPos, 10, cv::Scalar(0,255,0), -1);
+        // Draw detection visualization - simplify for performance
+        cv::circle(currentFrame, handPos, 15, cv::Scalar(0,255,0), -1);
         
-        // Safely draw contours if available
-        std::vector<cv::Point> handContour = handDetector->getHandContour();
-        if (!handContour.empty()) {
-            try {
-                // Draw basic contour - no need for complicated convexity defects
-                std::vector<std::vector<cv::Point>> contours = { handContour };
-                cv::drawContours(currentFrame, contours, 0, cv::Scalar(0,0,255), 2);
-                
-                // Draw a filled circle at hand position for better visibility
-                cv::circle(currentFrame, handPos, 15, cv::Scalar(0,255,0), -1);
-            }
-            catch (const cv::Exception& e) {
-                qDebug() << "Error drawing contours:" << e.what();
-            }
-        }
-        
-        qDebug() << "Hand detected at:" << handPos.x << "," << handPos.y 
-                 << "Game coords:" << gameX << "," << gameY;
+        // PERFORMANCE OPTIMIZATION: Skip contour drawing entirely
+        // std::vector<cv::Point> handContour = handDetector->getHandContour();
+        // if (!handContour.empty()) { ... }
     }
     
-    // Convert frame to QImage for display
-    cv::Mat rgbFrame;
-    cv::cvtColor(currentFrame, rgbFrame, cv::COLOR_BGR2RGB);
-    QImage qimg(rgbFrame.data, rgbFrame.cols, rgbFrame.rows,
-                static_cast<int>(rgbFrame.step), QImage::Format_RGB888);
-    
-    // Get current screen and update appropriate UI elements
-    QWidget* currentWidget = mainStack->currentWidget();
-    
-    if (currentWidget == gameScreen) {
-        webcamFeedLabel->setPixmap(QPixmap::fromImage(qimg).scaled(
-            webcamFeedLabel->size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
-        updateHandVisualization(handVisualizationLabel, gameX, gameY, handDetected);
-    } 
-    else if (currentWidget == welcomeScreen && isCalibrated) {
-        welcomeCameraFeedLabel->setPixmap(QPixmap::fromImage(qimg).scaled(
-            welcomeCameraFeedLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
-        updateHandVisualization(welcomeHandVisLabel, gameX, gameY, handDetected);
+    // Convert frame to QImage for display - OPTIMIZE BY SKIPPING SOMETIMES
+    static int displayCounter = 0;
+    if (++displayCounter % 3 == 0) { // Update display less frequently
+        cv::Mat rgbFrame;
+        cv::cvtColor(currentFrame, rgbFrame, cv::COLOR_BGR2RGB);
+        QImage qimg(rgbFrame.data, rgbFrame.cols, rgbFrame.rows,
+                    static_cast<int>(rgbFrame.step), QImage::Format_RGB888);
+        
+        // Update camera feeds for both welcome and game screens
+        QWidget* currentWidget = mainStack->currentWidget();
+        
+        // Update active webcam feed based on current screen
+        if (currentWidget == gameScreen) {
+            webcamFeedLabel->setPixmap(QPixmap::fromImage(qimg).scaled(
+                webcamFeedLabel->size(), Qt::IgnoreAspectRatio, Qt::FastTransformation));
+            updateHandVisualization(handVisualizationLabel, gameX, gameY, handDetected);
+        } 
+        else if (currentWidget == welcomeScreen && isCalibrated) {
+            welcomeCameraFeedLabel->setPixmap(QPixmap::fromImage(qimg).scaled(
+                welcomeCameraFeedLabel->size(), Qt::KeepAspectRatio, Qt::FastTransformation));
+            updateHandVisualization(welcomeHandVisLabel, gameX, gameY, handDetected);
+        }
     }
 }
 

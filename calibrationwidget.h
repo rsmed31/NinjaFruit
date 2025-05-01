@@ -37,6 +37,9 @@ public:
     // Reset calibration
     void resetCalibration();
 
+    // Add multi-position calibration capability
+    void enableMultiPositionCapture(bool enable);
+
 signals:
     void calibrationFinished();
 
@@ -47,6 +50,7 @@ protected:
 private slots:
     void updateFrame();
     void captureCalibrationPoint();
+    void captureSupplementaryCalibrationPoint();
 
 private:
     // OpenCV camera capture
@@ -65,9 +69,14 @@ private:
     QPushButton* m_captureButton;
     QLabel* m_instructionLabel;
     QLabel* m_statusLabel;
+    QPushButton* m_captureSupplementaryButton;
     
     // Hand detector reference
     HandDetector* m_handDetector;
+    
+    // Multi-position calibration
+    bool m_multiPositionEnabled;
+    int m_supplementaryPositionsCount;
     
     // Helper methods
     QImage matToQImage(const cv::Mat& mat);

@@ -3,6 +3,7 @@
 
 #include <opencv2/opencv.hpp>
 #include <QMutex>
+#include <vector>
 
 class HandDetector {
 public:
@@ -25,17 +26,29 @@ public:
 
     // Set the calibration image (captured during calibration)
     void setCalibrationImage(const cv::Mat &image);
+    
+    // Add a supplementary calibration image (for multi-position tracking)
+    void addCalibrationImage(const cv::Mat &image);
+    
+    // Clear all calibration images except the primary one
+    void clearSupplementaryCalibrations();
 
 private:
     // Detected hand data
     std::vector<cv::Point> m_handContour;
     std::vector<cv::Vec4i> m_defects;
     
-    // Reference image for FLANN matching
+    // Primary calibration image - make static so it persists through recompilation
     cv::Mat m_calibrationImage;
+    
+    // Additional calibration images for different hand positions
+    std::vector<cv::Mat> m_additionalCalibrations;
     
     // Thread safety
     QMutex m_mutex;
+    
+    // Utility function for FLANN matching against a single reference image
+    cv::Point matchImageFLANN(const cv::Mat &refImage, const cv::Mat &frame);
 };
 
 #endif // HANDDETECTOR_H

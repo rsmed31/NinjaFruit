@@ -10,141 +10,114 @@ HandDetector::HandDetector()
 
 cv::Point HandDetector::detectHand(const cv::Mat &frame)
 {
-    // First, check if we have a calibration image
+    // Skip processing if frame is empty
     if (frame.empty()) {
-        qDebug() << "Empty frame passed to detectHand";
         return cv::Point(-1, -1);
     }
     
-    cv::Mat calibImg;
-    {
-        QMutexLocker lock(&m_mutex);
-        if (m_calibrationImage.empty()) {
-            static int warningCount = 0;
-            if (warningCount++ % 30 == 0) { // Log only occasionally
-                qDebug() << "No calibration image available for hand detection";
-            }
-            return cv::Point(-1, -1);
-        }
-        calibImg = m_calibrationImage.clone(); // Safe copy under lock
+    QMutexLocker lock(&m_mutex);
+    
+    // Check if primary calibration exists
+    if (m_calibrationImage.empty()) {
+        return cv::Point(-1, -1);
     }
     
-    // Now do FLANN detection with SIFT features
+    // PERFORMANCE OPTIMIZATION: Downscale the input frame to improve speed
+    static cv::Mat smallFrame;
+    static const float scaleFactor = 0.5f; // Process at half resolution
+    cv::resize(frame, smallFrame, cv::Size(), scaleFactor, scaleFactor, cv::INTER_LINEAR);
+    
+    // Track the last successful position for smoothing
+    static cv::Point lastPosition(-1, -1);
+    
+    // Static counter to skip supplementary calibrations on some frames
+    static int frameCounter = 0;
+    frameCounter++;
+    
+    // Try matching with primary calibration image first
+    cv::Point result = matchImageFLANN(m_calibrationImage, smallFrame);
+    
+    // Only check supplementary calibrations every 3 frames if primary fails
+    if (result.x < 0 && !m_additionalCalibrations.empty() && frameCounter % 3 == 0) {
+        for (const auto& calibImg : m_additionalCalibrations) {
+            result = matchImageFLANN(calibImg, smallFrame);
+            if (result.x >= 0) {
+                break;
+            }
+        }
+    }
+    
+    // Scale result back to original image size
+    if (result.x >= 0) {
+        result.x = static_cast<int>(result.x / scaleFactor);
+        result.y = static_cast<int>(result.y / scaleFactor);
+        
+        // Simple position smoothing to reduce jitter
+        if (lastPosition.x >= 0) {
+            // 80-20 blend of new and old position
+            result.x = static_cast<int>(0.8 * result.x + 0.2 * lastPosition.x);
+            result.y = static_cast<int>(0.8 * result.y + 0.2 * lastPosition.y);
+        }
+        lastPosition = result;
+    }
+    
+    return result;
+}
+
+cv::Point HandDetector::matchImageFLANN(const cv::Mat &refImage, const cv::Mat &frame)
+{
     try {
-        // Create SIFT detector
-        cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
+        // PERFORMANCE OPTIMIZATION: Configure SIFT for fewer features and faster processing
+        cv::Ptr<cv::SIFT> sift = cv::SIFT::create(50); // Use fewer features (default is 400)
         std::vector<cv::KeyPoint> keypointsRef, keypointsFrame;
         cv::Mat descriptorsRef, descriptorsFrame;
         
         // Extract features
-        sift->detectAndCompute(calibImg, cv::noArray(), keypointsRef, descriptorsRef);
+        sift->detectAndCompute(refImage, cv::noArray(), keypointsRef, descriptorsRef);
         sift->detectAndCompute(frame, cv::noArray(), keypointsFrame, descriptorsFrame);
         
-        // Check if we found any features
-        if (descriptorsRef.empty() || descriptorsFrame.empty()) {
+        if (descriptorsRef.empty() || descriptorsFrame.empty() || 
+            keypointsRef.size() < 2 || keypointsFrame.size() < 2) {
             return cv::Point(-1, -1);
         }
         
-        // Now do FLANN matching
+        // PERFORMANCE OPTIMIZATION: Use the fast FLANN configuration
         cv::FlannBasedMatcher matcher;
-        std::vector<std::vector<cv::DMatch>> knnMatches;
-        matcher.knnMatch(descriptorsRef, descriptorsFrame, knnMatches, 2);
+        std::vector<cv::DMatch> matches;
+        // Use just simple matching instead of knnMatch which is slower
+        matcher.match(descriptorsRef, descriptorsFrame, matches);
         
-        // Apply Lowe's ratio test to filter matches
-        const float ratioThresh = 0.7f;
-        std::vector<cv::DMatch> goodMatches;
-        for (const auto& match : knnMatches) {
-            if (match.size() >= 2 && match[0].distance < ratioThresh * match[1].distance) {
-                goodMatches.push_back(match[0]);
-            }
-        }
-        
-        // Check if we have enough good matches
-        if (goodMatches.size() < 4) {
+        // Filter by distance
+        if (matches.empty()) {
             return cv::Point(-1, -1);
         }
+        
+        // Sort matches by distance
+        std::sort(matches.begin(), matches.end(), 
+            [](const cv::DMatch& a, const cv::DMatch& b) {
+                return a.distance < b.distance;
+            });
+        
+        // Take only the top 10 matches
+        const int maxMatches = std::min(10, static_cast<int>(matches.size()));
+        matches.resize(maxMatches);
         
         // Compute centroid from good matches
         cv::Point2f centroid(0.0f, 0.0f);
-        for (const auto& match : goodMatches) {
+        for (const auto& match : matches) {
             centroid += keypointsFrame[match.trainIdx].pt;
         }
-        centroid.x /= static_cast<float>(goodMatches.size());
-        centroid.y /= static_cast<float>(goodMatches.size());
-        cv::Point handPos(static_cast<int>(centroid.x), static_cast<int>(centroid.y));
+        centroid.x /= matches.size();
+        centroid.y /= matches.size();
         
-        // We've successfully found the hand position with FLANN matching 
-        // Now we'll try to find a contour for visualization, but we'll skip
-        // the convexity defects calculation since it causes errors
-        
-        try {
-            // Create a region of interest around the detected hand
-            const int radius = 100; // Smaller ROI for more focused detection
-            cv::Rect roi(
-                std::max(0, handPos.x - radius),
-                std::max(0, handPos.y - radius),
-                std::min(frame.cols - (handPos.x - radius), radius * 2),
-                std::min(frame.rows - (handPos.y - radius), radius * 2)
-            );
-            
-            // Skip contour detection if ROI is too small
-            if (roi.width >= 20 && roi.height >= 20) {
-                cv::Mat roiImg = frame(roi);
-                cv::Mat gray, blurred, thresh;
-                
-                // Use a more robust pre-processing pipeline
-                cv::cvtColor(roiImg, gray, cv::COLOR_BGR2GRAY);
-                cv::GaussianBlur(gray, blurred, cv::Size(5, 5), 0);
-                cv::adaptiveThreshold(blurred, thresh, 255, 
-                                     cv::ADAPTIVE_THRESH_GAUSSIAN_C,
-                                     cv::THRESH_BINARY_INV, 11, 2);
-                
-                // Find contours
-                std::vector<std::vector<cv::Point>> contours;
-                cv::findContours(thresh, contours, cv::RETR_EXTERNAL, 
-                                cv::CHAIN_APPROX_SIMPLE);
-                
-                // Find the largest contour
-                if (!contours.empty()) {
-                    auto largestContour = *std::max_element(
-                        contours.begin(), contours.end(),
-                        [](const auto& a, const auto& b) { 
-                            return cv::contourArea(a) < cv::contourArea(b); 
-                        }
-                    );
-                    
-                    // Simplify contour
-                    std::vector<cv::Point> approx;
-                    cv::approxPolyDP(largestContour, approx, 
-                                    cv::arcLength(largestContour, true) * 0.01, true);
-                    
-                    // Store the contour in global coordinates
-                    m_handContour = approx;
-                    for (auto& pt : m_handContour) {
-                        pt.x += roi.x;
-                        pt.y += roi.y;
-                    }
-                    
-                    // Skip convexity defects calculation - just clear them
-                    m_defects.clear();
-                }
-            }
-        }
-        catch (const cv::Exception& e) {
-            qDebug() << "Contour processing error:" << e.what();
-            m_handContour.clear();
-            m_defects.clear();
-        }
-        
-        // Return hand position regardless of contour processing success
-        return handPos;
+        return cv::Point(static_cast<int>(centroid.x), static_cast<int>(centroid.y));
     }
-    catch (const cv::Exception& e) {
-        qDebug() << "OpenCV error in detectHand:" << e.what();
+    catch (const cv::Exception&) {
+        // Silently fail on OpenCV errors
         return cv::Point(-1, -1);
     }
-    catch (const std::exception& e) {
-        qDebug() << "Error in detectHand:" << e.what();
+    catch (const std::exception&) {
+        // Silently fail on other errors
         return cv::Point(-1, -1);
     }
 }
@@ -156,7 +129,7 @@ void HandDetector::setCalibrationImage(const cv::Mat &image)
         return;
     }
     
-    qDebug() << "Setting calibration image:" << image.cols << "x" << image.rows 
+    qDebug() << "Setting primary calibration image:" << image.cols << "x" << image.rows 
              << "type:" << image.type() << "channels:" << image.channels();
     
     // Make a persistent copy of the image
@@ -201,13 +174,78 @@ void HandDetector::setCalibrationImage(const cv::Mat &image)
     QMutexLocker lock(&m_mutex);
     try {
         persistentCopy.copyTo(m_calibrationImage);  // Deep copy under lock
-        qDebug() << "✅ Calibration image set:" 
+        qDebug() << "✅ Primary calibration image set:" 
                  << m_calibrationImage.cols << "x" 
                  << m_calibrationImage.rows;
     } catch (const cv::Exception& e) {
         qDebug() << "❌ Failed to set calibration image:" << e.what();
         m_calibrationImage.release();
     }
+}
+
+void HandDetector::addCalibrationImage(const cv::Mat &image)
+{
+    if (image.empty()) {
+        qDebug() << "❌ Supplementary calibration image empty — skipping";
+        return;
+    }
+    
+    qDebug() << "Adding supplementary calibration image:" << image.cols << "x" << image.rows;
+    
+    // Make a persistent copy of the image
+    cv::Mat persistentCopy = image.clone();
+    
+    // Ensure we have a proper BGR image for SIFT processing
+    if (persistentCopy.type() != CV_8UC3) {
+        cv::Mat tmp;
+        if (persistentCopy.channels() == 1) {
+            cv::cvtColor(persistentCopy, tmp, cv::COLOR_GRAY2BGR);
+            persistentCopy = tmp;
+        } else {
+            persistentCopy.convertTo(tmp, CV_8UC3);
+            persistentCopy = tmp;
+        }
+    }
+    
+    if (persistentCopy.empty()) {
+        qDebug() << "❌ Failed to convert/copy supplementary calibration image";
+        return;
+    }
+    
+    // Verify SIFT can detect features in this image
+    cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
+    std::vector<cv::KeyPoint> keypoints;
+    cv::Mat descriptors;
+    
+    try {
+        sift->detectAndCompute(persistentCopy, cv::noArray(), keypoints, descriptors);
+        qDebug() << "SIFT found" << keypoints.size() << "keypoints in supplementary calibration";
+        
+        if (keypoints.size() < 10) {
+            qDebug() << "⚠️ Warning: Few keypoints in supplementary calibration";
+            return; // Skip images with too few keypoints
+        }
+    } catch (const cv::Exception& e) {
+        qDebug() << "❌ SIFT validation failed on supplementary calibration:" << e.what();
+        return;
+    }
+    
+    // Store the image safely
+    QMutexLocker lock(&m_mutex);
+    try {
+        m_additionalCalibrations.push_back(persistentCopy);
+        qDebug() << "✅ Added supplementary calibration image #" 
+                 << m_additionalCalibrations.size();
+    } catch (const cv::Exception& e) {
+        qDebug() << "❌ Failed to add supplementary calibration image:" << e.what();
+    }
+}
+
+void HandDetector::clearSupplementaryCalibrations()
+{
+    QMutexLocker lock(&m_mutex);
+    m_additionalCalibrations.clear();
+    qDebug() << "Cleared all supplementary calibration images";
 }
 
 void HandDetector::setHSVThreshold(int hMin, int hMax, int sMin, int sMax, int vMin, int vMax)
