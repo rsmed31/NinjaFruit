@@ -9,14 +9,18 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <QMutex>
+#include <QThread>  // Add this for QThread::msleep
 #include <opencv2/opencv.hpp>
+
+class HandDetector;
 
 class CalibrationWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit CalibrationWidget(QWidget *parent = nullptr);
+    explicit CalibrationWidget(QWidget *parent = nullptr, HandDetector* handDetector = nullptr);
     ~CalibrationWidget();
 
     // Structure to store calibration data
@@ -49,6 +53,7 @@ private:
     cv::VideoCapture m_camera;
     cv::Mat m_frame;
     QImage m_qImage;
+    QMutex m_mutex;
     
     // Calibration state
     QRect m_calibrationSquare;
@@ -60,6 +65,9 @@ private:
     QPushButton* m_captureButton;
     QLabel* m_instructionLabel;
     QLabel* m_statusLabel;
+    
+    // Hand detector reference
+    HandDetector* m_handDetector;
     
     // Helper methods
     QImage matToQImage(const cv::Mat& mat);

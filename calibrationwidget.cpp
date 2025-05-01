@@ -1,14 +1,24 @@
 #include "calibrationwidget.h"
+#include "handdetector.h"
 #include <QMessageBox>
 #include <QPainter>
-#include <QPen>  // Ensure QPen is fully defined
+#include <QPen>
 #include <QDebug>
 #include <cmath>
+#include <QMutexLocker>
 
-CalibrationWidget::CalibrationWidget(QWidget *parent)
+CalibrationWidget::CalibrationWidget(QWidget *parent, HandDetector* handDetector)
     : QWidget(parent)
     , m_calibrationPhase(0)
+    , m_handDetector(handDetector)
 {
+    // Add verification that handDetector is valid
+    if (!m_handDetector) {
+        qDebug() << "❌ WARNING: CalibrationWidget created with NULL handDetector!";
+    } else {
+        qDebug() << "✅ CalibrationWidget created with valid handDetector";
+    }
+    
     // Use horizontal layout: left for camera view, right for instructions and button.
     QHBoxLayout* mainLayout = new QHBoxLayout(this);
     
@@ -36,7 +46,7 @@ CalibrationWidget::CalibrationWidget(QWidget *parent)
     mainLayout->addWidget(cameraArea, 3);
     mainLayout->addWidget(instructionArea, 1);
     
-    // Set this widget’s minimum size based on initial camera frame (as before)
+    // Set this widget's minimum size based on initial camera frame
     m_camera.open(0);
     m_camera >> m_frame;
     if (!m_frame.empty()) {
@@ -51,7 +61,8 @@ CalibrationWidget::CalibrationWidget(QWidget *parent)
     m_calibrationSquare = QRect((width() - squareSize) / 2,
                                 (height() - squareSize) / 2,
                                 squareSize, squareSize);
-    // Timer and other initialization remain as before
+    
+    // Timer and other initialization
     m_timer = new QTimer(this);
     connect(m_timer, &QTimer::timeout, this, &CalibrationWidget::updateFrame);
     m_timer->start(30);
@@ -130,40 +141,157 @@ void CalibrationWidget::keyPressEvent(QKeyEvent* event)
 
 void CalibrationWidget::captureCalibrationPoint()
 {
-    // Capture a calibration image from the current frame
-    if (m_frame.empty())
+    // Verify handDetector is available
+    if (!m_handDetector) {
+        qDebug() << "❌ HandDetector is NULL in captureCalibrationPoint";
+        QMessageBox::critical(this, "Calibration Failed", 
+                           "Internal error: Hand detector not initialized");
         return;
-    // Instead of three steps, capture one good image
-    QImage calibImage = matToQImage(m_frame);
-    // For simplicity, save the center region of the image (or whole)
-    // and assume it represents the hand. (In a full update you would prompt the user.)
-    // Emit signal for calibration finished and store calibration image in calibration data.
-    m_calibData.points[0] = m_calibrationSquare.center();  // Dummy data
+    }
+
+    // Make sure we have a valid frame
+    if (m_frame.empty()) {
+        qDebug() << "❌ Initial frame is empty - forcing new capture";
+        // Force multiple frame captures to ensure we get a valid one
+        for (int retries = 0; retries < 10; retries++) {
+            if (m_camera.isOpened()) {
+                m_camera >> m_frame;
+                if (!m_frame.empty()) {
+                    qDebug() << "✅ Successfully captured frame on retry" << retries;
+                    break;
+                }
+                QThread::msleep(100); // Short delay between attempts
+            }
+        }
+        
+        if (m_frame.empty()) {
+            QMessageBox::warning(this, "Calibration Failed", 
+                               "Could not capture frame after multiple attempts - check your camera");
+            return;
+        }
+    }
+    
+    // Store calibration data
+    m_calibData.points[0] = m_calibrationSquare.center();
     m_calibData.scale = 1.0;
     m_calibData.rotation = 0.0;
     m_calibData.offset = m_calibrationSquare.center();
     
-    qDebug() << "Calibration completed using one-step capture.";
-    emit calibrationFinished();
+    // Test SIFT feature detection
+    cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
+    std::vector<cv::KeyPoint> keypoints;
+    cv::Mat descriptors;
     
-    // Optionally change UI texts:
-    m_instructionLabel->setText("Calibration complete!");
-    m_statusLabel->setText("Ready to map hand using FLANN matching.");
+    try {
+        sift->detectAndCompute(m_frame, cv::noArray(), keypoints, descriptors);
+        qDebug() << "SIFT detected" << keypoints.size() << "keypoints in frame";
+        
+        if (keypoints.size() < 10) {
+            QMessageBox::warning(this, "Poor Calibration Image", 
+                               "The current image has few details. Please show your hand more clearly and try again.");
+            return;
+        }
+    } catch (const cv::Exception& e) {
+        qDebug() << "❌ SIFT detection failed:" << e.what();
+        QMessageBox::warning(this, "Calibration Failed", 
+                           "Image analysis failed - please try again with better lighting");
+        return;
+    }
+    
+    // Create a deep copy of the frame for permanent storage
+    cv::Mat frameCopy = m_frame.clone();
+    
+    if (frameCopy.empty() || frameCopy.data == nullptr) {
+        qDebug() << "❌ Failed to create valid frame copy";
+        QMessageBox::warning(this, "Calibration Failed", 
+                           "Memory error while processing image - please try again");
+        return;
+    }
+    
+    qDebug() << "Frame info: " << frameCopy.cols << "x" << frameCopy.rows 
+             << "type:" << frameCopy.type() 
+             << "channels:" << frameCopy.channels();
+
+    // Extract ONLY the calibration square region
+    cv::Rect roi(m_calibrationSquare.x(), m_calibrationSquare.y(), 
+                 m_calibrationSquare.width(), m_calibrationSquare.height());
+    
+    // Make sure ROI is within frame bounds
+    roi = roi & cv::Rect(0, 0, frameCopy.cols, frameCopy.rows);
+    
+    // Check if ROI is valid
+    if (roi.width <= 10 || roi.height <= 10) {
+        qDebug() << "❌ Invalid ROI for calibration: " << roi.x << "," << roi.y << " " << roi.width << "x" << roi.height;
+        QMessageBox::warning(this, "Calibration Failed", 
+                           "Calibration region invalid - please try again");
+        return;
+    }
+    
+    // Extract only the hand region (ROI)
+    cv::Mat handRegion = frameCopy(roi).clone();
+    qDebug() << "Extracted hand region: " << handRegion.cols << "x" << handRegion.rows;
+    
+    // Stop timer and close camera
+    m_timer->stop();
+    if (m_camera.isOpened()) {
+        m_camera.release();
+        qDebug() << "Camera released during calibration";
+    }
+    
+    // Draw visual marker on calibration image for verification
+    cv::circle(handRegion, cv::Point(handRegion.cols/2, handRegion.rows/2), 20, cv::Scalar(0, 255, 0), 2);
+    cv::putText(handRegion, "HAND", cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
+    
+    // Save a debug copy of the calibration image to user's desktop
+    std::string calibFilename = "c:\\Users\\enmoh\\Desktop\\Ninja\\NinjaFruit\\hand_calibration.jpg";
+    try {
+        cv::imwrite(calibFilename, handRegion);
+        qDebug() << "✅ Saved calibration image to: " << calibFilename.c_str();
+    } catch (const cv::Exception& e) {
+        qDebug() << "❌ Failed to save calibration image: " << e.what();
+    }
+    
+    try {
+        // Apply the calibration image to the HandDetector - using ONLY the hand region
+        m_handDetector->setCalibrationImage(handRegion);
+        
+        // Update UI
+        m_instructionLabel->setText("Calibration complete!");
+        m_statusLabel->setText("Ready to track using FLANN matching");
+        m_calibrationPhase = 1; // Mark as calibrated
+        update(); // Refresh display
+        
+        qDebug() << "✅ Calibration image successfully set";
+        
+        // Signal completion - this will trigger MainWindow::onCalibrationFinished
+        emit calibrationFinished();
+    }
+    catch (const std::exception& e) {
+        qDebug() << "❌ Exception setting calibration image:" << e.what();
+        QMessageBox::warning(this, "Calibration Failed", 
+                           "Error saving calibration image: " + QString(e.what()));
+        
+        // Try to restart camera on failure
+        try {
+            m_camera.open(0);
+            if (m_camera.isOpened()) {
+                m_timer->start(30);
+            } else {
+                qDebug() << "❌ Failed to reopen camera after calibration failure";
+            }
+        } catch (const std::exception& e) {
+            qDebug() << "❌ Exception reopening camera:" << e.what();
+        }
+    }
 }
 
 void CalibrationWidget::calculateCalibration()
 {
-    // Calculate calibration parameters based on the 3 points
-    
-    // 1. Calculate scale (based on distance between first two points)
-    QPointF vec = m_calibData.points[1] - m_calibData.points[0];
-    m_calibData.scale = sqrt(vec.x() * vec.x() + vec.y() * vec.y());
-    
-    // 2. Calculate rotation (angle between horizontal and line from point 0 to 1)
-    m_calibData.rotation = atan2(vec.y(), vec.x());
-    
-    // 3. Calculate offset (average position of all three points)
-    m_calibData.offset = (m_calibData.points[0] + m_calibData.points[1] + m_calibData.points[2]) / 3.0;
+    // Calculate calibration parameters based on the stored points
+    // This simplified version just sets basic data
+    m_calibData.scale = 1.0;
+    m_calibData.rotation = 0.0;
+    m_calibData.offset = m_calibData.points[0];
     
     qDebug() << "Calibration completed with scale:" << m_calibData.scale
              << "rotation:" << m_calibData.rotation * 180 / M_PI << "degrees"

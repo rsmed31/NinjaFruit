@@ -24,22 +24,27 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
-private slots:
+public slots:
     void startCalibration();
     void startGame();
     void exitGame();
     void onCalibrationFinished();
-    
-    // Game state update slots
     void updateScore(int score);
     void updateLives(int lives);
     void updateTimer(int seconds);
     void onGameOver(int finalScore);
-    
-    // Processing timer
+
+private slots:
     void processFrame();
 
 private:
+    // Game state
+    bool isCalibrated;
+    
+    // Game logic components
+    HandDetector* handDetector;
+    GameEngine* gameEngine;
+    
     // Main UI components
     QWidget* centralWidget;
     QStackedWidget* mainStack;
@@ -69,10 +74,6 @@ private:
     // Calibration screen
     CalibrationWidget* calibrationWidget;
     
-    // Game logic components
-    HandDetector* handDetector;
-    GameEngine* gameEngine;
-    
     // Video processing
     cv::VideoCapture camera;
     cv::Mat currentFrame;
@@ -80,10 +81,8 @@ private:
     
     // Calibration data
     CalibrationWidget::CalibrationData calibrationData;
-    bool isCalibrated;
     
     // Hand position visualization
-    QLabel* handPositionLabel;
     QWidget* handIndicator;
     QLabel* handPosWidget;
 
@@ -94,12 +93,10 @@ private:
     // Hand visualization for game screen
     QLabel* handVisualizationLabel;
     
-    // Method to update hand visualization
-    void updateHandVisualization(QLabel* label, float x, float y, bool detected);
-    
-    // Setup methods
+    // Methods
     void setupUI();
     void setupConnections();
+    void updateHandVisualization(QLabel* label, float x, float y, bool detected);
     void mapHandToGameSpace(const cv::Point& handPos, float& gameX, float& gameY);
 };
 

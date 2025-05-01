@@ -1,109 +1,226 @@
 #include "handdetector.h"
 #include <iostream>
 #include <QDebug>
+#include <QMutexLocker>
 
 HandDetector::HandDetector()
-    // Default HSV range optimized for skin detection
-    : m_hMin(0), m_hMax(20)
-    , m_sMin(48), m_sMax(255)
-    , m_vMin(80), m_vMax(255)
-    , m_minHandArea(3000)  // Minimum hand area in pixels
-    , m_handPosition(-1, -1)
 {
+    qDebug() << "HandDetector initialized";
 }
 
 cv::Point HandDetector::detectHand(const cv::Mat &frame)
 {
-    // If calibration image exists, try FLANN matching first for better accuracy.
-    if(!m_calibrationImage.empty()){
-        cv::Point detected = detectHandFLANN(frame);
-        qDebug() << "FLANN detection returned:" << detected.x << detected.y;
-        if(detected.x >= 0 && detected.y >= 0)
-            return detected;
-    }
-    // Fallback to basic skin thresholding detection
-    m_handPosition = cv::Point(-1, -1);
-    m_handContour.clear();
-    m_hullIndices.clear();
-    m_defects.clear();
-    cv::Mat skinMask = extractSkinMask(frame);
-    if (findHandContour(skinMask)) {
-        m_handPosition = calculateHandPosition();
-        analyzeHandShape();
-    }
-    qDebug() << "Basic detection returned:" << m_handPosition.x << m_handPosition.y;
-    return m_handPosition;
-}
-
-cv::Point HandDetector::detectHandFLANN(const cv::Mat &frame)
-{
-    // Fall back to basic detection if no calibration image is set
-    if (m_calibrationImage.empty()) {
-        return detectHand(frame);
-    }
-
-    // Create SIFT detector
-    cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
-    std::vector<cv::KeyPoint> keypointsRef, keypointsFrame;
-    cv::Mat descriptorsRef, descriptorsFrame;
-
-    // Extract features from calibration image and current frame
-    sift->detectAndCompute(m_calibrationImage, cv::noArray(), keypointsRef, descriptorsRef);
-    sift->detectAndCompute(frame, cv::noArray(), keypointsFrame, descriptorsFrame);
-
-    if (descriptorsRef.empty() || descriptorsFrame.empty())
+    // First, check if we have a calibration image
+    if (frame.empty()) {
+        qDebug() << "Empty frame passed to detectHand";
         return cv::Point(-1, -1);
-
-    // Use FLANN matcher
-    cv::FlannBasedMatcher matcher;
-    std::vector<std::vector<cv::DMatch>> knnMatches;
-    matcher.knnMatch(descriptorsRef, descriptorsFrame, knnMatches, 2);
-
-    // Filter matches using Lowe's ratio test
-    const float ratioThresh = 0.7f;
-    std::vector<cv::DMatch> goodMatches;
-    for (const auto& match : knnMatches) {
-        if (match.size() >= 2 &&
-            match[0].distance < ratioThresh * match[1].distance) {
-            goodMatches.push_back(match[0]);
-        }
     }
-
-    // Compute centroid from good matches
-    if (!goodMatches.empty()) {
+    
+    cv::Mat calibImg;
+    {
+        QMutexLocker lock(&m_mutex);
+        if (m_calibrationImage.empty()) {
+            static int warningCount = 0;
+            if (warningCount++ % 30 == 0) { // Log only occasionally
+                qDebug() << "No calibration image available for hand detection";
+            }
+            return cv::Point(-1, -1);
+        }
+        calibImg = m_calibrationImage.clone(); // Safe copy under lock
+    }
+    
+    // Now do FLANN detection with SIFT features
+    try {
+        // Create SIFT detector
+        cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
+        std::vector<cv::KeyPoint> keypointsRef, keypointsFrame;
+        cv::Mat descriptorsRef, descriptorsFrame;
+        
+        // Extract features
+        sift->detectAndCompute(calibImg, cv::noArray(), keypointsRef, descriptorsRef);
+        sift->detectAndCompute(frame, cv::noArray(), keypointsFrame, descriptorsFrame);
+        
+        // Check if we found any features
+        if (descriptorsRef.empty() || descriptorsFrame.empty()) {
+            return cv::Point(-1, -1);
+        }
+        
+        // Now do FLANN matching
+        cv::FlannBasedMatcher matcher;
+        std::vector<std::vector<cv::DMatch>> knnMatches;
+        matcher.knnMatch(descriptorsRef, descriptorsFrame, knnMatches, 2);
+        
+        // Apply Lowe's ratio test to filter matches
+        const float ratioThresh = 0.7f;
+        std::vector<cv::DMatch> goodMatches;
+        for (const auto& match : knnMatches) {
+            if (match.size() >= 2 && match[0].distance < ratioThresh * match[1].distance) {
+                goodMatches.push_back(match[0]);
+            }
+        }
+        
+        // Check if we have enough good matches
+        if (goodMatches.size() < 4) {
+            return cv::Point(-1, -1);
+        }
+        
+        // Compute centroid from good matches
         cv::Point2f centroid(0.0f, 0.0f);
         for (const auto& match : goodMatches) {
             centroid += keypointsFrame[match.trainIdx].pt;
         }
         centroid.x /= static_cast<float>(goodMatches.size());
         centroid.y /= static_cast<float>(goodMatches.size());
-        return cv::Point(static_cast<int>(centroid.x), static_cast<int>(centroid.y));
+        cv::Point handPos(static_cast<int>(centroid.x), static_cast<int>(centroid.y));
+        
+        // We've successfully found the hand position with FLANN matching 
+        // Now we'll try to find a contour for visualization, but we'll skip
+        // the convexity defects calculation since it causes errors
+        
+        try {
+            // Create a region of interest around the detected hand
+            const int radius = 100; // Smaller ROI for more focused detection
+            cv::Rect roi(
+                std::max(0, handPos.x - radius),
+                std::max(0, handPos.y - radius),
+                std::min(frame.cols - (handPos.x - radius), radius * 2),
+                std::min(frame.rows - (handPos.y - radius), radius * 2)
+            );
+            
+            // Skip contour detection if ROI is too small
+            if (roi.width >= 20 && roi.height >= 20) {
+                cv::Mat roiImg = frame(roi);
+                cv::Mat gray, blurred, thresh;
+                
+                // Use a more robust pre-processing pipeline
+                cv::cvtColor(roiImg, gray, cv::COLOR_BGR2GRAY);
+                cv::GaussianBlur(gray, blurred, cv::Size(5, 5), 0);
+                cv::adaptiveThreshold(blurred, thresh, 255, 
+                                     cv::ADAPTIVE_THRESH_GAUSSIAN_C,
+                                     cv::THRESH_BINARY_INV, 11, 2);
+                
+                // Find contours
+                std::vector<std::vector<cv::Point>> contours;
+                cv::findContours(thresh, contours, cv::RETR_EXTERNAL, 
+                                cv::CHAIN_APPROX_SIMPLE);
+                
+                // Find the largest contour
+                if (!contours.empty()) {
+                    auto largestContour = *std::max_element(
+                        contours.begin(), contours.end(),
+                        [](const auto& a, const auto& b) { 
+                            return cv::contourArea(a) < cv::contourArea(b); 
+                        }
+                    );
+                    
+                    // Simplify contour
+                    std::vector<cv::Point> approx;
+                    cv::approxPolyDP(largestContour, approx, 
+                                    cv::arcLength(largestContour, true) * 0.01, true);
+                    
+                    // Store the contour in global coordinates
+                    m_handContour = approx;
+                    for (auto& pt : m_handContour) {
+                        pt.x += roi.x;
+                        pt.y += roi.y;
+                    }
+                    
+                    // Skip convexity defects calculation - just clear them
+                    m_defects.clear();
+                }
+            }
+        }
+        catch (const cv::Exception& e) {
+            qDebug() << "Contour processing error:" << e.what();
+            m_handContour.clear();
+            m_defects.clear();
+        }
+        
+        // Return hand position regardless of contour processing success
+        return handPos;
     }
-
-    return cv::Point(-1, -1);
+    catch (const cv::Exception& e) {
+        qDebug() << "OpenCV error in detectHand:" << e.what();
+        return cv::Point(-1, -1);
+    }
+    catch (const std::exception& e) {
+        qDebug() << "Error in detectHand:" << e.what();
+        return cv::Point(-1, -1);
+    }
 }
 
 void HandDetector::setCalibrationImage(const cv::Mat &image)
 {
-    if (!image.empty()) {
-        image.copyTo(m_calibrationImage);
-        qDebug() << "Calibration image set for FLANN matching.";
+    if (image.empty()) {
+        qDebug() << "❌ Calibration image empty — skipping";
+        return;
+    }
+    
+    qDebug() << "Setting calibration image:" << image.cols << "x" << image.rows 
+             << "type:" << image.type() << "channels:" << image.channels();
+    
+    // Make a persistent copy of the image
+    cv::Mat persistentCopy = image.clone();
+    
+    // Ensure we have a proper BGR image for SIFT processing
+    if (persistentCopy.type() != CV_8UC3) {
+        qDebug() << "Converting image to 8UC3 format";
+        cv::Mat tmp;
+        if (persistentCopy.channels() == 1) {
+            cv::cvtColor(persistentCopy, tmp, cv::COLOR_GRAY2BGR);
+            persistentCopy = tmp;
+        } else {
+            persistentCopy.convertTo(tmp, CV_8UC3);
+            persistentCopy = tmp;
+        }
+    }
+    
+    if (persistentCopy.empty()) {
+        qDebug() << "❌ Failed to convert/copy calibration image";
+        return;
+    }
+    
+    // Verify SIFT can detect features in this image
+    cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
+    std::vector<cv::KeyPoint> keypoints;
+    cv::Mat descriptors;
+    
+    try {
+        sift->detectAndCompute(persistentCopy, cv::noArray(), keypoints, descriptors);
+        qDebug() << "SIFT validation check: detected" << keypoints.size() << "keypoints in calibration image";
+        
+        if (keypoints.size() < 10) {
+            qDebug() << "⚠️ Warning: Few keypoints in calibration image, matching may be unreliable";
+        }
+    } catch (const cv::Exception& e) {
+        qDebug() << "❌ SIFT validation failed on calibration image:" << e.what();
+        return;
+    }
+    
+    // Store the image safely
+    QMutexLocker lock(&m_mutex);
+    try {
+        persistentCopy.copyTo(m_calibrationImage);  // Deep copy under lock
+        qDebug() << "✅ Calibration image set:" 
+                 << m_calibrationImage.cols << "x" 
+                 << m_calibrationImage.rows;
+    } catch (const cv::Exception& e) {
+        qDebug() << "❌ Failed to set calibration image:" << e.what();
+        m_calibrationImage.release();
     }
 }
 
 void HandDetector::setHSVThreshold(int hMin, int hMax, int sMin, int sMax, int vMin, int vMax)
 {
-    m_hMin = hMin;
-    m_hMax = hMax;
-    m_sMin = sMin;
-    m_sMax = sMax;
-    m_vMin = vMin;
-    m_vMax = vMax;
+    // Kept for API compatibility, but unused now
+    Q_UNUSED(hMin); Q_UNUSED(hMax); Q_UNUSED(sMin);
+    Q_UNUSED(sMax); Q_UNUSED(vMin); Q_UNUSED(vMax);
 }
 
 void HandDetector::setMinHandArea(double area)
 {
-    m_minHandArea = area;
+    // Kept for API compatibility, but unused now
+    Q_UNUSED(area);
 }
 
 std::vector<cv::Point> HandDetector::getHandContour() const
@@ -114,89 +231,4 @@ std::vector<cv::Point> HandDetector::getHandContour() const
 std::vector<cv::Vec4i> HandDetector::getConvexityDefects() const
 {
     return m_defects;
-}
-
-cv::Mat HandDetector::extractSkinMask(const cv::Mat &frame)
-{
-    cv::Mat skinMask, hsvFrame;
-    
-    // Convert from BGR to HSV color space
-    cv::cvtColor(frame, hsvFrame, cv::COLOR_BGR2HSV);
-    
-    // Apply skin color thresholding in HSV space
-    cv::inRange(hsvFrame, 
-                cv::Scalar(m_hMin, m_sMin, m_vMin),
-                cv::Scalar(m_hMax, m_sMax, m_vMax),
-                skinMask);
-    
-    // Apply morphological operations to clean up the mask
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
-    cv::morphologyEx(skinMask, skinMask, cv::MORPH_CLOSE, kernel); // Close small holes
-    cv::morphologyEx(skinMask, skinMask, cv::MORPH_OPEN, kernel);  // Remove small noise
-    
-    return skinMask;
-}
-
-bool HandDetector::findHandContour(const cv::Mat &skinMask)
-{
-    // Find all contours in the binary image
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(skinMask.clone(), contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-    
-    if (contours.empty()) {
-        return false;
-    }
-    
-    // Find the largest contour (assumed to be the hand)
-    size_t maxContourIdx = 0;
-    double maxArea = 0;
-    
-    for (size_t i = 0; i < contours.size(); i++) {
-        double area = cv::contourArea(contours[i]);
-        if (area > maxArea) {
-            maxArea = area;
-            maxContourIdx = i;
-        }
-    }
-    
-    // Ensure it's large enough to be a hand
-    if (maxArea < m_minHandArea) {
-        return false;
-    }
-    
-    m_handContour = contours[maxContourIdx];
-    return true;
-}
-
-cv::Point HandDetector::calculateHandPosition()
-{
-    // Use moments to find the centroid of the hand
-    cv::Moments moments = cv::moments(m_handContour);
-    if (moments.m00 != 0) {
-        int cx = static_cast<int>(moments.m10 / moments.m00);
-        int cy = static_cast<int>(moments.m01 / moments.m00);
-        return cv::Point(cx, cy);
-    }
-    return cv::Point(-1, -1);
-}
-
-void HandDetector::analyzeHandShape()
-{
-    // Find convex hull of the hand contour
-    cv::convexHull(m_handContour, m_hullIndices);
-    
-    // Find convexity defects - useful for finger detection
-    if (m_hullIndices.size() > 3) {
-        // The convexity defects function requires the indices to be integers
-        std::vector<int> hullForDefects;
-        cv::convexHull(m_handContour, hullForDefects, false);
-        
-        // Compute convexity defects - the "valleys" between fingers
-        cv::convexityDefects(m_handContour, hullForDefects, m_defects);
-        
-        // Note: Further processing could:
-        // 1. Filter defects by depth to identify fingers
-        // 2. Calculate angles between defect points to distinguish fingers
-        // 3. Implement gesture recognition based on number and position of fingers
-    }
 }

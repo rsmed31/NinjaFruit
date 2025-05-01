@@ -4,19 +4,18 @@
 #include <QDebug>
 #include <QPainter>
 #include <QPen>
+#include <QFile> // Add this include for QFile::exists
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , isCalibrated(false)
+    , handDetector(new HandDetector())
+    , gameEngine(new GameEngine(this))
     , handPosWidget(nullptr)
 {
+    // Now set up UI that uses handDetector
     setupUI();
-    
-    // Initialize components BEFORE making connections
-    handDetector = new HandDetector();
-    gameEngine = new GameEngine(this);
-    
-    setupConnections();   // Move this after creating gameEngine & handDetector
+    setupConnections();
     
     // Initialize camera
     camera.open(0);
@@ -161,8 +160,9 @@ void MainWindow::setupUI()
     gameScreenLayout->addWidget(gameWidget, 3); // Game scene takes 3/4 of the width 
     gameScreenLayout->addLayout(rightLayout, 1); // Right side takes 1/4
     
-    // 3. Create calibration widget
-    calibrationWidget = new CalibrationWidget();
+    // 3. Create calibration widget with hand detector reference
+    // Make sure we're explicitly passing our handDetector instance
+    calibrationWidget = new CalibrationWidget(nullptr, handDetector);
     
     // Add all screens to stack
     mainStack->addWidget(welcomeScreen);
@@ -212,6 +212,12 @@ void MainWindow::setupConnections()
 
 void MainWindow::startCalibration()
 {
+    // Ensure the handDetector is available before switching to calibration screen
+    if (!handDetector) {
+        QMessageBox::critical(this, "Error", "Hand detector not initialized");
+        return;
+    }
+
     mainStack->setCurrentWidget(calibrationWidget);
     
     // Stop the processing timer if it's running
@@ -226,14 +232,42 @@ void MainWindow::onCalibrationFinished()
 {
     calibrationData = calibrationWidget->getCalibrationData();
     isCalibrated = true;
-    // Pass calibration image to HandDetector for FLANN matching
-    handDetector->setCalibrationImage(currentFrame);
+    
+    // Completely close and reopen the camera - more reliable than just checking if it's open
+    if (camera.isOpened()) {
+        camera.release();
+    }
+    
+    qDebug() << "⚙️ Reopening camera after calibration";
+    camera.open(0);
+    camera.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
+    camera.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
+    
+    if (!camera.isOpened()) {
+        QMessageBox::critical(this, "Error", "Failed to reopen camera after calibration");
+        return;
+    }
+    
+    // Test camera by capturing a frame
+    cv::Mat testFrame;
+    camera >> testFrame;
+    if (testFrame.empty()) {
+        qDebug() << "❌ Failed to get frame from reopened camera";
+        QMessageBox::warning(this, "Camera Issue", 
+                           "Camera reopened but failed to capture frames. Try restarting the application.");
+    } else {
+        qDebug() << "✅ Successfully captured frame from reopened camera:" 
+                << testFrame.cols << "x" << testFrame.rows;
+    }
+    
     QMessageBox::information(this, "Calibration Complete",
                            "Hand calibration is complete. You can now start the game.");
+    
+    // Switch back to welcome screen
     mainStack->setCurrentWidget(welcomeScreen);
     
-    // Start camera processing for welcome screen after calibration
-    processingTimer.start(33);
+    // Start the processing timer to process frames
+    processingTimer.start(33); // ~30 fps
 }
 
 void MainWindow::startGame()
@@ -258,11 +292,42 @@ void MainWindow::exitGame()
 
 void MainWindow::processFrame()
 {
-    if (!camera.isOpened()) return;
-    camera >> currentFrame;
-    if (currentFrame.empty()) return;
+    if (!camera.isOpened()) {
+        qDebug() << "❌ Camera not open in processFrame()";
+        return;
+    }
     
-    cv::Point handPos = handDetector->detectHand(currentFrame);
+    // Capture a new frame from the camera
+    cv::Mat frame;
+    camera >> frame;
+    
+    if (frame.empty()) {
+        static int emptyFrameCount = 0;
+        if (++emptyFrameCount % 30 == 0) {
+            qDebug() << "❌ Received empty frame from camera";
+        }
+        return;
+    }
+    
+    // Save frame to our member variable
+    frame.copyTo(currentFrame);
+    
+    // Try to detect the hand in the frame
+    cv::Point handPos(-1, -1);
+    try {
+        handPos = handDetector->detectHand(currentFrame);
+        
+        // Log hand detection result periodically
+        static int frameCount = 0;
+        if (++frameCount % 30 == 0) {
+            qDebug() << "Hand detection result:" << handPos.x << handPos.y;
+        }
+    }
+    catch (const std::exception& e) {
+        qDebug() << "❌ Exception in hand detection:" << e.what();
+        handPos = cv::Point(-1, -1);
+    }
+    
     float gameX = 0.0f, gameY = 0.0f;
     bool handDetected = false;
     
@@ -270,18 +335,31 @@ void MainWindow::processFrame()
         handDetected = true;
         mapHandToGameSpace(handPos, gameX, gameY);
         
-        // Update hand position - this now calculates sword handle and tip positions
-        // in updateHandPosition method
+        // Update game engine and widget with hand position
         gameEngine->updateHandPosition(QVector3D(gameX, gameY, 0.75f));
         gameWidget->setHandPosition(gameX, gameY);
         
-        // Draw detection circles/contours on the camera frame
+        // Draw detection visualization
         cv::circle(currentFrame, handPos, 10, cv::Scalar(0,255,0), -1);
+        
+        // Safely draw contours if available
         std::vector<cv::Point> handContour = handDetector->getHandContour();
         if (!handContour.empty()) {
-            std::vector<std::vector<cv::Point>> contours = { handContour };
-            cv::drawContours(currentFrame, contours, 0, cv::Scalar(0,0,255), 2);
+            try {
+                // Draw basic contour - no need for complicated convexity defects
+                std::vector<std::vector<cv::Point>> contours = { handContour };
+                cv::drawContours(currentFrame, contours, 0, cv::Scalar(0,0,255), 2);
+                
+                // Draw a filled circle at hand position for better visibility
+                cv::circle(currentFrame, handPos, 15, cv::Scalar(0,255,0), -1);
+            }
+            catch (const cv::Exception& e) {
+                qDebug() << "Error drawing contours:" << e.what();
+            }
         }
+        
+        qDebug() << "Hand detected at:" << handPos.x << "," << handPos.y 
+                 << "Game coords:" << gameX << "," << gameY;
     }
     
     // Convert frame to QImage for display
@@ -290,22 +368,17 @@ void MainWindow::processFrame()
     QImage qimg(rgbFrame.data, rgbFrame.cols, rgbFrame.rows,
                 static_cast<int>(rgbFrame.step), QImage::Format_RGB888);
     
-    // Update camera feeds for both welcome and game screens
+    // Get current screen and update appropriate UI elements
     QWidget* currentWidget = mainStack->currentWidget();
     
-    // Update active webcam feed based on current screen
     if (currentWidget == gameScreen) {
         webcamFeedLabel->setPixmap(QPixmap::fromImage(qimg).scaled(
             webcamFeedLabel->size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
-            
-        // Update hand visualization in game screen
         updateHandVisualization(handVisualizationLabel, gameX, gameY, handDetected);
     } 
     else if (currentWidget == welcomeScreen && isCalibrated) {
         welcomeCameraFeedLabel->setPixmap(QPixmap::fromImage(qimg).scaled(
             welcomeCameraFeedLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
-            
-        // Update hand visualization in welcome screen
         updateHandVisualization(welcomeHandVisLabel, gameX, gameY, handDetected);
     }
 }

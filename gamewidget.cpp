@@ -703,7 +703,8 @@ void GameWidget::updateProjectilePositions()
         ProjectileRenderData &proj = i.next();
         
         float timeActive = m_elapsedTime - proj.spawnTime;
-        QVector3D currentPos = calculateProjectilePosition(proj, timeActive);
+        // Avoid unused variable warning
+        Q_UNUSED(calculateProjectilePosition(proj, timeActive));
         
         // ❌ DO NOT deactivate or remove based on Z or active time.
         // ❌ Leave all projectiles active so that GameEngine can decide their fate.
@@ -732,13 +733,15 @@ void GameWidget::configureProjectileTrajectory(ProjectileRenderData& projectile)
     // Time to reach back of hit zone (z = 0)
     if (projectile.velocity.z() < 0) {  // Only if moving toward screen
         float timeToBackOfZone = (0.0f - projectile.position.z()) / projectile.velocity.z();
+        // Calculate front of zone time but only use if needed
         float timeToFrontOfZone = (5.0f - projectile.position.z()) / projectile.velocity.z();
         
         // Projectile passes through hit zone if timeToBackOfZone > 0
-        if (timeToBackOfZone > 0.0f) {
-            // Choose the time in the middle of the zone
-            float timeToHitZone = (timeToBackOfZone + timeToFrontOfZone) / 2.0f;
+        if (timeToBackOfZone > 0.0f && timeToFrontOfZone > timeToBackOfZone) {
             willHitZone = true;
+            
+            // We can use timeToFrontOfZone here if needed
+            // For debugging: qDebug() << "Projectile will hit zone between" << timeToBackOfZone << "and" << timeToFrontOfZone;
         }
     }
     
