@@ -192,9 +192,16 @@ void GameEngine::updateProjectiles(float deltaTime)
 
         qDebug() << "Projectile" << i << "z:" << pos.z() << "state:" << projectile.getState() << "sliced:" << projectile.wasSliced();
 
+        // If the projectile has been sliced, mark it for removal immediately
+        // and skip all further checks to prevent lives from being decremented
+        if (projectile.wasSliced()) {
+            toRemove.append(i);
+            continue;  // Skip all other checks for sliced projectiles
+        }
+
         // Only when projectile exits far enough (z >= 15)
         if (pos.z() >= 15.0f && projectile.getState() == Projectile::ACTIVE) {
-            // First check if we need to deduct a life
+            // First check if we need to deduct a life - ONLY if it wasn't sliced
             if (!projectile.wasSliced() && !projectile.wasProcessed() && m_gameRunning) {
                 // MISS: lose 1 life
                 qDebug() << "MISSED - projectile" << i << "disappeared unsliced at z =" << pos.z();
@@ -213,16 +220,20 @@ void GameEngine::updateProjectiles(float deltaTime)
             
             // Mark projectile for removal
             projectile.split();
+            toRemove.append(i);
         }
 
         // Remove inactive projectiles
         if (projectile.getState() == Projectile::INACTIVE) {
-            toRemove.prepend(i);
+            toRemove.append(i);
         }
     }
     
     // Second pass: remove projectiles safely
-    foreach (int i, toRemove) {
+    // Sort indices in descending order to avoid index shifting problems
+    std::sort(toRemove.begin(), toRemove.end(), std::greater<int>());
+    
+    for (int i : toRemove) {
         if (i >= 0 && i < m_projectiles.size()) {
             emit projectileRemoved(i);
             m_projectiles.removeAt(i);
