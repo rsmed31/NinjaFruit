@@ -18,15 +18,25 @@ MainWindow::MainWindow(QWidget *parent)
     setupUI();
     setupConnections();
     
-    // Initialize camera
+    // Initialize camera with lower resolution
     camera.open(0);
-    camera.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
-    camera.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
+    
+    // Set camera buffer size to 1 to avoid lag from buffered frames
+    camera.set(cv::CAP_PROP_BUFFERSIZE, 1);
+    
+    // Set camera to lower resolution for better performance
+    camera.set(cv::CAP_PROP_FRAME_WIDTH, 640);
+    camera.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
+    
+    // Increase camera FPS if supported
+    camera.set(cv::CAP_PROP_FPS, 30);
+    
     if (!camera.isOpened()) {
         QMessageBox::critical(this, "Error", "Could not open camera");
     }
     
-    // Connect processing timer
+    // Connect processing timer with slightly faster rate
+    processingTimer.setInterval(16); // Target 60 FPS
     connect(&processingTimer, &QTimer::timeout, this, &MainWindow::processFrame);
 }
 
@@ -256,8 +266,12 @@ void MainWindow::onCalibrationFinished()
     
     qDebug() << "⚙️ Reopening camera after calibration";
     camera.open(0);
-    camera.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
-    camera.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
+    
+    // Apply the same optimized camera settings
+    camera.set(cv::CAP_PROP_BUFFERSIZE, 1);
+    camera.set(cv::CAP_PROP_FRAME_WIDTH, 640);
+    camera.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
+    camera.set(cv::CAP_PROP_FPS, 30);
     
     if (!camera.isOpened()) {
         QMessageBox::critical(this, "Error", "Failed to reopen camera after calibration");
@@ -283,7 +297,7 @@ void MainWindow::onCalibrationFinished()
     mainStack->setCurrentWidget(welcomeScreen);
     
     // Start the processing timer to process frames
-    processingTimer.start(33); // ~30 fps
+    processingTimer.start(16); // Target 60 FPS
 }
 
 void MainWindow::startGame()
@@ -312,21 +326,24 @@ void MainWindow::processFrame()
         return;
     }
     
-    // PERFORMANCE OPTIMIZATION: Skip some frames when laggy
-    static int frameSkipCounter = 0;
-    if (++frameSkipCounter % 2 != 0) { // Process every other frame
+    // CRITICAL OPTIMIZATION: First grab frame without decoding
+    // This ensures we get the most recent frame and discard buffered ones
+    if (!camera.grab()) {
         return;
     }
     
-    // Capture a new frame from the camera
+    // Retrieve and decode the grabbed frame immediately
     cv::Mat frame;
-    camera >> frame;
+    if (!camera.retrieve(frame)) {
+        return;
+    }
     
     if (frame.empty()) {
         return;
     }
     
-    // Save frame to our member variable
+    // Don't resize the frame - work with the smaller original size
+    // Just make a shallow copy for tracking purposes
     frame.copyTo(currentFrame);
     
     // Try to detect the hand in the frame
@@ -349,34 +366,41 @@ void MainWindow::processFrame()
         gameEngine->updateHandPosition(QVector3D(gameX, gameY, 0.75f));
         gameWidget->setHandPosition(gameX, gameY);
         
-        // Draw detection visualization - simplify for performance
-        cv::circle(currentFrame, handPos, 15, cv::Scalar(0,255,0), -1);
-        
-        // PERFORMANCE OPTIMIZATION: Skip contour drawing entirely
-        // std::vector<cv::Point> handContour = handDetector->getHandContour();
-        // if (!handContour.empty()) { ... }
+        // OPTIMIZATION: Only draw tracking circle on display frames
+        // but don't modify the currentFrame otherwise
     }
     
-    // Convert frame to QImage for display - OPTIMIZE BY SKIPPING SOMETIMES
+    // OPTIMIZATION: Update display much less frequently (every 3rd frame)
     static int displayCounter = 0;
-    if (++displayCounter % 3 == 0) { // Update display less frequently
+    if (++displayCounter % 3 == 0) {
+        // Create display copy with circle (don't modify currentFrame)
+        cv::Mat displayFrame = currentFrame.clone();
+        
+        if (handDetected) {
+            // Draw hand position indicator
+            cv::circle(displayFrame, handPos, 10, cv::Scalar(0,255,0), -1);
+        }
+        
+        // Convert frame to QImage with RGB conversion in one step
         cv::Mat rgbFrame;
-        cv::cvtColor(currentFrame, rgbFrame, cv::COLOR_BGR2RGB);
+        cv::cvtColor(displayFrame, rgbFrame, cv::COLOR_BGR2RGB);
+        
+        // Create QImage without copying data (faster) - but we must use it before rgbFrame is modified
         QImage qimg(rgbFrame.data, rgbFrame.cols, rgbFrame.rows,
                     static_cast<int>(rgbFrame.step), QImage::Format_RGB888);
         
-        // Update camera feeds for both welcome and game screens
+        // OPTIMIZATION: Create and scale QPixmap in one operation
         QWidget* currentWidget = mainStack->currentWidget();
         
-        // Update active webcam feed based on current screen
+        // Skip updates when not needed
         if (currentWidget == gameScreen) {
-            webcamFeedLabel->setPixmap(QPixmap::fromImage(qimg).scaled(
-                webcamFeedLabel->size(), Qt::IgnoreAspectRatio, Qt::FastTransformation));
+            webcamFeedLabel->setPixmap(QPixmap::fromImage(qimg.scaled(
+                webcamFeedLabel->size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation)));
             updateHandVisualization(handVisualizationLabel, gameX, gameY, handDetected);
         } 
         else if (currentWidget == welcomeScreen && isCalibrated) {
-            welcomeCameraFeedLabel->setPixmap(QPixmap::fromImage(qimg).scaled(
-                welcomeCameraFeedLabel->size(), Qt::KeepAspectRatio, Qt::FastTransformation));
+            welcomeCameraFeedLabel->setPixmap(QPixmap::fromImage(qimg.scaled(
+                welcomeCameraFeedLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)));
             updateHandVisualization(welcomeHandVisLabel, gameX, gameY, handDetected);
         }
     }
@@ -444,6 +468,18 @@ void MainWindow::mapHandToGameSpace(const cv::Point& handPos, float& gameX, floa
     // Map Y coordinates from camera to game space
     // The value is inverted since higher Y in camera = lower position in real world
     gameY = (1.0f - normY) * 10.0f; 
+    
+    // Apply stronger smoothing to reduce jitter
+    static float lastX = gameX;
+    static float lastY = gameY;
+    
+    // Apply temporal smoothing for more stable hand position
+    gameX = 0.8f * gameX + 0.2f * lastX;
+    gameY = 0.8f * gameY + 0.2f * lastY;
+    
+    // Store current position for next smoothing
+    lastX = gameX;
+    lastY = gameY;
     
     // Apply bounds to prevent the sword from going off-screen
     gameX = qBound(-7.5f, gameX, 7.5f);
