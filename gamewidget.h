@@ -60,7 +60,7 @@ private:
         float spawnTime;
         bool active;
         enum State { ACTIVE, SPLIT } state;
-        enum Type { APPLE, ORANGE, BANANA, WATERMELON } type;
+        enum Type {CONE,CYLINDER,CUBE,PYRAMID} type;
     };
 
     QList<ProjectileRenderData> m_projectiles;
@@ -86,6 +86,14 @@ private:
     void drawVirtualHand();
     void drawProjectiles();
     void drawDistanceIndicators();
+
+    //ss
+    void drawCone();
+    void drawCylinder();
+    void drawCube();
+    void drawPyramid();
+
+//
     
     // Add missing declaration for getSwordEndpoints method
     void getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos);

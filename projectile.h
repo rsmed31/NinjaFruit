@@ -8,11 +8,14 @@ class Projectile
 {
 public:
     enum Type {
-        APPLE,
-        ORANGE,
-        BANANA,
-        WATERMELON
+        CUBE = 0,        // Faces planes
+        PYRAMID = 1,     // Faces planes
+        CYLINDER = 2,    // Quadrique
+        CONE = 3         // Quadrique
     };
+
+
+
     
     enum State {
         ACTIVE,    // Normal flying state
@@ -20,7 +23,7 @@ public:
         INACTIVE   // To be removed from game
     };
     
-    Projectile(Type type = APPLE);
+    Projectile(Type type = CYLINDER);
     
     // Update position based on elapsed time
     void update(float deltaTime);

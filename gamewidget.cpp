@@ -193,17 +193,10 @@ void GameWidget::launchProjectile(const QVector3D& position, const QVector3D& ve
     projectile.active = true;
     projectile.state = ProjectileRenderData::ACTIVE;
     
-    // Set random projectile type
-    int typeValue = QRandomGenerator::global()->bounded(100);
-    if (typeValue < 25) {
-        projectile.type = ProjectileRenderData::APPLE;
-    } else if (typeValue < 50) {
-        projectile.type = ProjectileRenderData::ORANGE;
-    } else if (typeValue < 75) {
-        projectile.type = ProjectileRenderData::BANANA;
-    } else {
-        projectile.type = ProjectileRenderData::WATERMELON;
-    }
+    // Set random projectile type among the 4 required types
+    int typeValue = QRandomGenerator::global()->bounded(4); // 0 to 3
+    projectile.type = static_cast<ProjectileRenderData::Type>(typeValue);
+
     
     // Verify the projectile will actually reach the screen
     configureProjectileTrajectory(projectile);
@@ -547,6 +540,91 @@ void GameWidget::drawVirtualHand()
     glPopMatrix();
 }
 
+void GameWidget::drawCone() {
+    GLUquadric* quad = gluNewQuadric();
+    gluQuadricNormals(quad, GLU_SMOOTH);
+
+    glRotatef(-90, 1, 0, 0); // Align cone along Z axis
+
+    float baseRadius = 0.6f;   // Wider base
+    float height = 2.0f;       // Taller cone
+
+    gluCylinder(quad, baseRadius, 0.0f, height, 16, 1); // Cone shape
+
+    // Optional: add a base disk to close the bottom
+    gluDisk(quad, 0.0f, baseRadius, 16, 1);
+
+    gluDeleteQuadric(quad);
+}
+
+
+
+void GameWidget::drawCylinder() {
+    GLUquadric* quad = gluNewQuadric();
+    gluQuadricNormals(quad, GLU_SMOOTH);
+
+    glRotatef(90, 0.0f, 1.0f, 0.0f); // align with X axis
+
+    float radius = 0.5f;
+    float length = 2.0f;
+
+    gluCylinder(quad, radius, radius, length, 16, 1);
+
+    // Draw caps
+    gluDisk(quad, 0.0f, radius, 16, 1);
+    glTranslatef(0.0f, 0.0f, length);
+    gluDisk(quad, 0.0f, radius, 16, 1);
+
+    gluDeleteQuadric(quad);
+}
+
+
+
+void GameWidget::drawCube() {
+    float s = 1.0f;  // ↗️ demi-longueur du côté, donc cube de taille 2x2x2
+
+    glBegin(GL_QUADS);
+    // Front
+    glVertex3f(-s, -s, s); glVertex3f(s, -s, s); glVertex3f(s, s, s); glVertex3f(-s, s, s);
+    // Back
+    glVertex3f(-s, -s, -s); glVertex3f(-s, s, -s); glVertex3f(s, s, -s); glVertex3f(s, -s, -s);
+    // Left
+    glVertex3f(-s, -s, -s); glVertex3f(-s, -s, s); glVertex3f(-s, s, s); glVertex3f(-s, s, -s);
+    // Right
+    glVertex3f(s, -s, -s); glVertex3f(s, s, -s); glVertex3f(s, s, s); glVertex3f(s, -s, s);
+    // Top
+    glVertex3f(-s, s, -s); glVertex3f(-s, s, s); glVertex3f(s, s, s); glVertex3f(s, s, -s);
+    // Bottom
+    glVertex3f(-s, -s, -s); glVertex3f(s, -s, -s); glVertex3f(s, -s, s); glVertex3f(-s, -s, s);
+    glEnd();
+}
+
+
+void GameWidget::drawPyramid() {
+    float h = 1.6f;   // ↗️ hauteur
+    float s = 1.0f;   // ↗️ demi-longueur des côtés de la base
+
+    glBegin(GL_TRIANGLES);
+    // Face avant
+    glVertex3f(0.0f, h, 0.0f); glVertex3f(-s, 0.0f, s); glVertex3f(s, 0.0f, s);
+    // Face droite
+    glVertex3f(0.0f, h, 0.0f); glVertex3f(s, 0.0f, s); glVertex3f(s, 0.0f, -s);
+    // Face arrière
+    glVertex3f(0.0f, h, 0.0f); glVertex3f(s, 0.0f, -s); glVertex3f(-s, 0.0f, -s);
+    // Face gauche
+    glVertex3f(0.0f, h, 0.0f); glVertex3f(-s, 0.0f, -s); glVertex3f(-s, 0.0f, s);
+    glEnd();
+
+    // Base carrée
+    glBegin(GL_QUADS);
+    glVertex3f(-s, 0.0f, -s); glVertex3f(s, 0.0f, -s);
+    glVertex3f(s, 0.0f, s); glVertex3f(-s, 0.0f, s);
+    glEnd();
+}
+
+
+
+
 // Update the drawProjectiles method to ensure they appear within view
 void GameWidget::drawProjectiles()
 {
@@ -570,34 +648,31 @@ void GameWidget::drawProjectiles()
         
         // Active vs split states
         if (proj.state == ProjectileRenderData::ACTIVE) {
-            // Draw a more visible sphere for active projectiles
-            glColor3f(0.0f, 0.8f, 0.2f); // Bright green
-            
-            GLUquadric* quad = gluNewQuadric();
-            gluQuadricNormals(quad, GLU_SMOOTH);
-            gluSphere(quad, 0.5f, 16, 16);  // Larger radius (0.5)
-            gluDeleteQuadric(quad);
-            
-            // Draw an outline to improve visibility
-            glDisable(GL_LIGHTING);
-            glColor3f(1.0f, 1.0f, 1.0f);
-            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            
-            GLUquadric* outlineQuad = gluNewQuadric();
-            gluQuadricDrawStyle(outlineQuad, GLU_LINE);
-            gluSphere(outlineQuad, 0.52f, 8, 8);
-            gluDeleteQuadric(outlineQuad);
-            
-            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            glEnable(GL_LIGHTING);
+            glColor3f(0.0f, 0.8f, 0.2f); // Greenish
+
+            switch (proj.type) {
+            case ProjectileRenderData::CONE:
+                drawCone(); break;
+
+            case ProjectileRenderData::CYLINDER:
+                drawCylinder(); break;
+
+            case ProjectileRenderData::CUBE:
+                drawCube(); break;
+
+            case ProjectileRenderData::PYRAMID:
+                drawPyramid(); break;
+            }
         }
+
+
         else if (proj.state == ProjectileRenderData::SPLIT) {
             // Split projectile visualization (keeping the existing code)
             float splitTime = m_elapsedTime - proj.spawnTime - 0.1f;
-            
+
             glDisable(GL_LIGHTING);
             glColor3f(1.0f, 1.0f, 0.0f);
-            
+
             glPointSize(5.0f);  // Larger points
             glBegin(GL_POINTS);
             for (int i = 0; i < 20; i++) {
@@ -608,32 +683,32 @@ void GameWidget::drawProjectiles()
                 glVertex3f(x, y, 0);
             }
             glEnd();
-            
+
             // Draw two halves
             glColor3f(0.0f, 0.9f, 0.2f);
-            
+
             // First half - adjust positioning for better visibility
             glPushMatrix();
             glTranslatef(-0.3f - splitTime * 0.7f, -splitTime * 1.0f, 0);
             glRotatef(splitTime * 240.0f, 0, 0, 1);
-            
+
             GLUquadric* quad1 = gluNewQuadric();
             gluQuadricNormals(quad1, GLU_SMOOTH);
             gluSphere(quad1, 0.4f, 16, 8);
             gluDeleteQuadric(quad1);
             glPopMatrix();
-            
+
             // Second half
             glPushMatrix();
             glTranslatef(0.3f + splitTime * 0.7f, -splitTime * 1.0f, 0);
             glRotatef(-splitTime * 240.0f, 0, 0, 1);
-            
+
             GLUquadric* quad2 = gluNewQuadric();
             gluQuadricNormals(quad2, GLU_SMOOTH);
             gluSphere(quad2, 0.4f, 16, 8);
             gluDeleteQuadric(quad2);
             glPopMatrix();
-            
+
             glEnable(GL_LIGHTING);
         }
         

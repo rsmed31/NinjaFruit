@@ -232,7 +232,7 @@ void GameEngine::updateProjectiles(float deltaTime)
 
 Projectile GameEngine::createRandomProjectile()
 {
-    Projectile::Type type = Projectile::APPLE;
+    Projectile::Type type = Projectile::CYLINDER;
     
     Projectile projectile(type);
     
