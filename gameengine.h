@@ -69,7 +69,7 @@ private slots:
 
 private:
     // Game parameters
-    static const int MAX_LIVES = 3;
+    static const int MAX_LIVES = 100;
     static const int GAME_DURATION = 60; // seconds
     
     // Game state
