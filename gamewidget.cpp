@@ -58,9 +58,12 @@ GameWidget::~GameWidget()
 // Update the setHandPosition function for better mapping
 void GameWidget::setHandPosition(float x, float y)
 {
-    // Invert Y again if needed by subtracting (the mapping in MainWindow now produces gameY accordingly)
-    // Here we assume gameY is already correct; if further inversion is needed, use: -y
-    m_handPosition = QVector3D(x, y, 10.0f);  // fixed Z value for 3D placement
+    if (x == -999.0f && y == -999.0f) {
+        m_handPosition = m_lastValidHandPosition;
+    } else {
+        m_handPosition = QVector3D(x, y, 10.0f);
+        m_lastValidHandPosition = m_handPosition;
+    }
     update();
 }
 
@@ -153,7 +156,9 @@ void GameWidget::updateScene()
 {
     // Track elapsed time
     m_elapsedTime += 0.016f; // ~16ms per frame at 60 FPS
-    
+    m_handPosition.setX(0.85f * m_handPosition.x() + 0.15f * m_lastValidHandPosition.x());
+    m_handPosition.setY(0.85f * m_handPosition.y() + 0.15f * m_lastValidHandPosition.y());
+
     // Check for sword-projectile collisions
     checkHitZoneCollisions();
     
@@ -308,98 +313,58 @@ void GameWidget::drawDistanceIndicators()
     glEnable(GL_LIGHTING);
 }
 
-// Replace drawHandRange with a proper 3D cylindrical hit zone
-void GameWidget::drawHitCylinder()
-{
+void GameWidget::drawHitCylinder() {
     glDisable(GL_LIGHTING);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
-    // Position the hit cylinder directly in front of the camera
-    // This is the region where sword slicing is detected
+
     glPushMatrix();
-    
-    // Move the cylinder to a position that makes sense for gameplay
-    // Center at player's position, extending forward
-    glTranslatef(0.0f, 1.0f, 3.0f);
-    
-    // Parameters for the hit cylinder
-    const float cylinderRadius = 4.0f;
-    const float cylinderHeight = 3.0f;
-    const int cylinderSegments = 20;
-    
-    // Draw a semi-cylindrical hit zone (wireframe with transparency)
-    glColor4f(0.3f, 0.8f, 1.0f, 0.25f);  // Light blue, mostly transparent
-    
-    // Draw the curved surface of the semi-cylinder
-    glBegin(GL_TRIANGLE_STRIP);
-    for (int i = 0; i <= cylinderSegments; i++) {
-        float angle = M_PI * (1.0f - (float)i / cylinderSegments);
-        float x = cylinderRadius * cos(angle);
-        float z = cylinderRadius * sin(angle);
-        
-        // Bottom vertex
-        glVertex3f(x, 0.0f, z);
-        // Top vertex
-        glVertex3f(x, cylinderHeight, z);
-    }
-    glEnd();
-    
-    // Draw wireframe overlay for better visibility
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    glColor4f(0.5f, 1.0f, 1.0f, 0.8f);  // Brighter blue, more opaque
-    glLineWidth(1.5f);
-    
-    // Draw curved surface wireframe
-    glBegin(GL_LINE_STRIP);
-    for (int i = 0; i <= cylinderSegments; i++) {
-        float angle = M_PI * (1.0f - (float)i / cylinderSegments);
-        float x = cylinderRadius * cos(angle);
-        float z = cylinderRadius * sin(angle);
-        glVertex3f(x, 0.0f, z);
-    }
-    glEnd();
-    
-    glBegin(GL_LINE_STRIP);
-    for (int i = 0; i <= cylinderSegments; i++) {
-        float angle = M_PI * (1.0f - (float)i / cylinderSegments);
-        float x = cylinderRadius * cos(angle);
-        float z = cylinderRadius * sin(angle);
-        glVertex3f(x, cylinderHeight, z);
-    }
-    glEnd();
-    
-    // Draw vertical lines
-    for (int i = 0; i <= cylinderSegments; i += 4) {
-        float angle = M_PI * (1.0f - (float)i / cylinderSegments);
-        float x = cylinderRadius * cos(angle);
-        float z = cylinderRadius * sin(angle);
-        
-        glBegin(GL_LINES);
-        glVertex3f(x, 0.0f, z);
-        glVertex3f(x, cylinderHeight, z);
+
+    const float radius = 6.0f;
+    const float z = 0.75f;
+    const float yCenter = 1.5f;
+    const float height = 9.0f;
+    const int segments = 64;
+    const int rings = 10;
+
+    glTranslatef(0.0f, yCenter, z);
+
+    glColor4f(0.5f, 1.0f, 1.0f, 0.4f);  // Bright mesh color
+    glLineWidth(1.2f);
+
+    // Horizontal rings
+    for (int j = 0; j <= rings; ++j) {
+        float y = -height / 2.0f + j * (height / rings);
+        glBegin(GL_LINE_LOOP);
+        for (int i = 0; i < segments; ++i) {
+            float angle = 2 * M_PI * i / segments;
+            float x = radius * cos(angle);
+            float z = radius * sin(angle);
+            glVertex3f(x, y, z);
+        }
         glEnd();
     }
-    
-    // Add a "HIT ZONE" label using simple lines
-    glColor4f(1.0f, 1.0f, 1.0f, 0.9f);
-    glPushMatrix();
-    glTranslatef(0.0f, cylinderHeight / 2.0f, cylinderRadius - 0.1f);
-    glScalef(0.5f, 0.5f, 0.5f);
-    // Draw a simple marker
-    glBegin(GL_LINES);
-    glVertex3f(-1.0f, 0.0f, 0.0f);
-    glVertex3f(1.0f, 0.0f, 0.0f);
-    glEnd();
-    glPopMatrix();
-    
-    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
+    // Vertical lines
+    for (int i = 0; i <= segments / 2; ++i) {  // 🔺 only front half (180°)
+        float angle = M_PI * i / (segments / 2);
+        float x = radius * cos(angle);
+        float z = radius * sin(angle);
+        glBegin(GL_LINE_STRIP);
+        for (int j = 0; j <= rings; ++j) {
+            float y = -height / 2.0f + j * (height / rings);
+            glVertex3f(x, y, z);
+        }
+        glEnd();
+    }
+
     glLineWidth(1.0f);
     glPopMatrix();
-    
+
     glDisable(GL_BLEND);
     glEnable(GL_LIGHTING);
 }
+
 
 // Add this method near the other helper functions to get sword endpoints in world space
 void GameWidget::getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos)
@@ -407,19 +372,20 @@ void GameWidget::getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos)
     // Start with the hand position
     float handX = m_handPosition.x() * 0.25f;  // Match scale in drawVirtualHand
     float handY = m_handPosition.y() * 0.25f;
-    
+
     // Calculate handle position (base of sword) in world coordinates
     // Match the translation in drawVirtualHand
     handlePos = QVector3D(handX, handY + 0.5f, 3.0f);
-    
+
     // Rotation angles from drawVirtualHand (should match exactly)
     float rotZ = 15.0f * M_PI / 180.0f;  // 15° in radians
     float rotY = -20.0f * M_PI / 180.0f; // -20° in radians
-    
+
     // Sword length in world units (scaled from model units)
-    float swordScale = 0.045f;  // Match the scale in drawVirtualHand
-    float swordLength = 18.0f * swordScale; // blade length * scale factor
-    
+    float swordScale = 0.12f;
+
+    float swordLength = 18.0f * swordScale;
+
     // Calculate the tip position by applying the rotations to a vector pointing upward
     QVector3D direction(0.0f, swordLength, 0.0f);
     
@@ -448,16 +414,18 @@ void GameWidget::drawVirtualHand()
     glPushMatrix();
     
     // Map hand position with more responsive tracking
-    float handX = m_handPosition.x() * 0.25f;  // Scale factor increased for better movement
-    float handY = m_handPosition.y() * 0.25f;
+    float angle = m_handPosition.x() * (M_PI / 2.0f); // from -90° to +90°
+    float radius = 6.0f; // ✅ match cylinder radius
+    float x = m_handPosition.x();  // Already normalized in [-7.5, 7.5]
+    float z = 0.75f;
+    float y = m_handPosition.y() * 0.6f;  // 🔺 broader vertical sweep
+
+
     
     // Position sword closer to camera for better first-person feel
     // Move z value closer to camera (from 0.75f to 3.0f)
-    glTranslatef(
-        handX,           
-        handY + 0.5f,    // Lower position to see more of the sword
-        3.0f             // Much closer to camera for first-person feel
-    );
+    glTranslatef(x, y + 0.8f, z); // 🟢 Center better vertically
+
     
     // Calculate and emit sword endpoints for collision detection
     QVector3D handlePos, tipPos;
@@ -468,8 +436,9 @@ void GameWidget::drawVirtualHand()
     glRotatef(-20.0f, 0.0f, 1.0f, 0.0f); // Less rotation on Y axis
     
     // Increase scale for bigger sword appearance
-    float swordScale = 0.045f;  // Increased from 0.035f
+    float swordScale = 0.12f;
     glScalef(swordScale, swordScale, swordScale);
+
     
     glDisable(GL_LIGHTING);
     
@@ -936,13 +905,21 @@ void GameWidget::checkHitZoneCollisions()
     QVector3D handlePos, tipPos;
     getSwordEndpoints(handlePos, tipPos);
 
-    // Define the hit cylinder zone
-    const float cylinderRadius = 4.0f;
-    const float cylinderHeight = 3.0f;
-    const QVector3D cylinderCenter(0.0f, 1.0f, 3.0f);
+    // Adjusted hit cylinder zone
+    const float cylinderRadius = 4.0f; // Reduced radius for better alignment
+    const float cylinderHeight = 7.0f; // Reduced height for better alignment
+    const QVector3D cylinderCenter(0.0f, 1.0f, 0.5f); // Moved closer to the hit zone
 
     QVector3D swordVector = tipPos - handlePos;
     float swordLength = swordVector.length();
+
+    // Ensure sword length is within a valid range
+    if (swordLength < 1.0f || swordLength > 10.0f) {
+        qDebug() << "Sword length out of bounds, adjusting...";
+        swordLength = std::clamp(swordLength, 1.0f, 10.0f);
+        tipPos = handlePos + swordVector.normalized() * swordLength;
+    }
+
     QVector3D swordDir = swordVector.normalized();
 
     int index = 0;
@@ -967,57 +944,51 @@ void GameWidget::checkHitZoneCollisions()
         bool inRadius = distXZ <= cylinderRadius;
         bool inHeight = pos.y() >= cylinderCenter.y() &&
                         pos.y() <= cylinderCenter.y() + cylinderHeight;
-        bool inFront = pos.z() >= cylinderCenter.z();
 
-        if (!(inRadius && inHeight && inFront)) {
+        if (!(inRadius && inHeight)) {
             ++index;
             continue;
         }
 
+        // Refine collision detection for projectiles
         float projectileRadius = getProjectileCollisionRadius(proj.type);
 
         if (proj.type == ProjectileRenderData::CYLINDER) {
-            // More accurate detection: sword segment vs. cylinder axis
-            float cylinderLength = 2.0f;
             QVector3D cylCenter = pos;
-            QVector3D cylHalfVec = QVector3D(1.0f, 0.0f, 0.0f) * (cylinderLength * 0.5f);
+            QVector3D cylHalfVec = QVector3D(1.0f, 0.0f, 0.0f) * (2.0f * 0.5f);
             QVector3D cylStart = cylCenter - cylHalfVec;
             QVector3D cylEnd = cylCenter + cylHalfVec;
 
             float dist = distanceBetweenSegments(handlePos, tipPos, cylStart, cylEnd);
 
-            if (dist <= 0.5f) { // match cylinder radius
+            if (dist <= 0.5f) {
                 splitProjectile(index);
                 emit scoreChanged(10);
                 qDebug() << "Cylinder HIT at index" << index;
             }
-        if (proj.type == ProjectileRenderData::CONE) {
+        } else if (proj.type == ProjectileRenderData::CONE) {
             QVector3D coneStart = pos;
-            QVector3D coneEnd = pos + QVector3D(0.0f, 0.0f, 2.0f); // matches drawCone()
+            QVector3D coneEnd = pos + QVector3D(0.0f, 0.0f, 2.0f);
 
             float dist = distanceBetweenSegments(handlePos, tipPos, coneStart, coneEnd);
 
-            if (dist <= 0.6f) { // match base radius
+            if (dist <= 0.6f) {
                 splitProjectile(index);
                 emit scoreChanged(10);
                 qDebug() << "Cone HIT at index" << index;
             }
-        }
-        if (proj.type == ProjectileRenderData::PYRAMID) {
-            QVector3D baseCenter = pos; // base at y = 0
-            QVector3D tip = pos + QVector3D(0.0f, 1.6f, 0.0f); // tip at y = +1.6
+        } else if (proj.type == ProjectileRenderData::PYRAMID) {
+            QVector3D baseCenter = pos;
+            QVector3D tip = pos + QVector3D(0.0f, 1.6f, 0.0f);
 
             float dist = distanceBetweenSegments(handlePos, tipPos, baseCenter, tip);
 
-            if (dist <= 1.0f) { // ~half diagonal of base
+            if (dist <= 1.0f) {
                 splitProjectile(index);
                 emit scoreChanged(10);
                 qDebug() << "Pyramid HIT at index" << index;
             }
-        }
-
         } else {
-            // Default sphere-based collision
             QVector3D toProj = pos - handlePos;
             float projLen = QVector3D::dotProduct(toProj, swordDir);
             projLen = std::clamp(projLen, 0.0f, swordLength);

@@ -377,9 +377,12 @@ void MainWindow::processFrame()
         cv::Mat displayFrame = currentFrame.clone();
         
         if (handDetected) {
-            // Draw hand position indicator
-            cv::circle(displayFrame, handPos, 10, cv::Scalar(0,255,0), -1);
+            gameEngine->updateHandPosition(QVector3D(gameX, gameY, 0.75f));
+            gameWidget->setHandPosition(gameX, gameY);
+        } else {
+            gameWidget->setHandPosition(-999.0f, -999.0f);  // triggers fallback in GameWidget
         }
+
         
         // Convert frame to QImage with RGB conversion in one step
         cv::Mat rgbFrame;
@@ -464,7 +467,7 @@ void MainWindow::mapHandToGameSpace(const cv::Point& handPos, float& gameX, floa
     // Map X coordinates from camera to game space with mirroring
     // This creates a more intuitive left-to-right hand mapping
     gameX = (0.5f - normX) * 16.0f;
-    
+
     // Map Y coordinates from camera to game space
     // The value is inverted since higher Y in camera = lower position in real world
     gameY = (1.0f - normY) * 10.0f; 
