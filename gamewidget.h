@@ -120,6 +120,9 @@ private:
     
     // Check collision between hand and projectiles within hit zone
     void checkHitZoneCollisions();
+
+    float getProjectileCollisionRadius(ProjectileRenderData::Type type) const;
+
 };
 
 #endif // GAMEWIDGET_H

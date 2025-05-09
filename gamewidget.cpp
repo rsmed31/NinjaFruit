@@ -123,7 +123,7 @@ void GameWidget::paintGL()
     gluLookAt(
         0.0, 1.8, 6.0,      // Move camera closer (z=6.0 instead of 8.0)
         0.0, 1.0, -30.0,    // Look further down the z-axis for better depth
-        0.0, 1.0, 0.0       // Up vector
+        0.0, 1.0, 10.0       // Up vector
     );
     
     // 3. Lighting setup
@@ -551,6 +551,7 @@ void GameWidget::drawCone() {
 
     gluCylinder(quad, baseRadius, 0.0f, height, 16, 1); // Cone shape
 
+
     // Optional: add a base disk to close the bottom
     gluDisk(quad, 0.0f, baseRadius, 16, 1);
 
@@ -565,8 +566,8 @@ void GameWidget::drawCylinder() {
 
     glRotatef(90, 0.0f, 1.0f, 0.0f); // align with X axis
 
-    float radius = 0.5f;
-    float length = 2.0f;
+    float radius = 0.2f;  // Reduced from 0.5f
+    float length = 1.0f;  // Reduced from 2.0f
 
     gluCylinder(quad, radius, radius, length, 16, 1);
 
@@ -581,7 +582,7 @@ void GameWidget::drawCylinder() {
 
 
 void GameWidget::drawCube() {
-    float s = 1.0f;  // ↗️ demi-longueur du côté, donc cube de taille 2x2x2
+    float s = 0.5f;  // ↗️ demi-longueur du côté, donc cube de taille 2x2x2
 
     glBegin(GL_QUADS);
     // Front
@@ -667,13 +668,12 @@ void GameWidget::drawProjectiles()
 
 
         else if (proj.state == ProjectileRenderData::SPLIT) {
-            // Split projectile visualization (keeping the existing code)
             float splitTime = m_elapsedTime - proj.spawnTime - 0.1f;
 
+            // 🔸 POP effect — yellow points around impact
             glDisable(GL_LIGHTING);
             glColor3f(1.0f, 1.0f, 0.0f);
-
-            glPointSize(5.0f);  // Larger points
+            glPointSize(5.0f);
             glBegin(GL_POINTS);
             for (int i = 0; i < 20; i++) {
                 float angle = i * 18.0f;
@@ -684,33 +684,119 @@ void GameWidget::drawProjectiles()
             }
             glEnd();
 
-            // Draw two halves
-            glColor3f(0.0f, 0.9f, 0.2f);
+            // 🔸 Then draw the two halves depending on projectile type
+            switch (proj.type) {
+            case ProjectileRenderData::CYLINDER: {
+                glColor3f(0.8f, 0.2f, 0.2f); // Reddish for split parts
 
-            // First half - adjust positioning for better visibility
-            glPushMatrix();
-            glTranslatef(-0.3f - splitTime * 0.7f, -splitTime * 1.0f, 0);
-            glRotatef(splitTime * 240.0f, 0, 0, 1);
+                // First half
+                glPushMatrix();
+                glTranslatef(-0.3f - splitTime * 0.7f, -splitTime * 0.9f, 0);
+                glRotatef(splitTime * 180.0f, 0, 1, 0);
+                drawCylinder();
+                glPopMatrix();
 
-            GLUquadric* quad1 = gluNewQuadric();
-            gluQuadricNormals(quad1, GLU_SMOOTH);
-            gluSphere(quad1, 0.4f, 16, 8);
-            gluDeleteQuadric(quad1);
-            glPopMatrix();
+                // Second half
+                glPushMatrix();
+                glTranslatef(0.3f + splitTime * 0.7f, -splitTime * 0.9f, 0);
+                glRotatef(-splitTime * 180.0f, 0, 1, 0);
+                drawCylinder();
+                glPopMatrix();
+                break;
+            }
+            case ProjectileRenderData::CONE: {
+                glColor3f(0.9f, 0.5f, 0.2f); // Orangey slice
+                float baseOffset = 0.4f; // how much they slide apart
+                float fallOffset = splitTime * 0.8f;
 
-            // Second half
-            glPushMatrix();
-            glTranslatef(0.3f + splitTime * 0.7f, -splitTime * 1.0f, 0);
-            glRotatef(-splitTime * 240.0f, 0, 0, 1);
+                // First half (left or front)
+                glPushMatrix();
+                glTranslatef(-baseOffset - splitTime * 0.5f, -fallOffset, 0);
+                glRotatef(splitTime * 160.0f, 0, 1, 0); // rotate along Y
+                drawCone();
+                glPopMatrix();
 
-            GLUquadric* quad2 = gluNewQuadric();
-            gluQuadricNormals(quad2, GLU_SMOOTH);
-            gluSphere(quad2, 0.4f, 16, 8);
-            gluDeleteQuadric(quad2);
-            glPopMatrix();
+                // Second half (right or back)
+                glPushMatrix();
+                glTranslatef(baseOffset + splitTime * 0.5f, -fallOffset, 0);
+                glRotatef(-splitTime * 160.0f, 0, 1, 0);
+                drawCone();
+                glPopMatrix();
+                break;
+            }
+            case ProjectileRenderData::CUBE: {
+                glColor3f(0.2f, 0.6f, 1.0f); // Blue-ish cube slice
+                float baseOffset = 0.6f;
+                float fall = splitTime * 0.7f;
+                float rot = splitTime * 180.0f;
 
-            glEnable(GL_LIGHTING);
+                // Left half
+                glPushMatrix();
+                glTranslatef(-baseOffset - splitTime * 0.5f, -fall, 0);
+                glRotatef(rot, 0, 1, 0);
+                drawCube();
+                glPopMatrix();
+
+                // Right half
+                glPushMatrix();
+                glTranslatef(baseOffset + splitTime * 0.5f, -fall, 0);
+                glRotatef(-rot, 0, 1, 0);
+                drawCube();
+                glPopMatrix();
+                break;
+            }
+            case ProjectileRenderData::PYRAMID: {
+                glColor3f(0.9f, 0.7f, 0.1f); // Yellowish
+
+                float offset = 0.6f + splitTime * 0.5f;
+                float fall = splitTime * 0.8f;
+
+                // Left half
+                glPushMatrix();
+                glTranslatef(-offset, -fall, 0.0f);
+                glRotatef(splitTime * 160.0f, 0, 0, 1);
+                glScalef(0.5f, 1.0f, 1.0f); // Compress X
+                drawPyramid();
+                glPopMatrix();
+
+                // Right half
+                glPushMatrix();
+                glTranslatef(offset, -fall, 0.0f);
+                glRotatef(-splitTime * 160.0f, 0, 0, 1);
+                glScalef(0.5f, 1.0f, 1.0f); // Compress X
+                drawPyramid();
+                glPopMatrix();
+                break;
+            }
+
+
+            default:
+                // ⏩ Old default split for sphere
+                glColor3f(0.0f, 0.9f, 0.2f);
+
+                glPushMatrix();
+                glTranslatef(-0.3f - splitTime * 0.7f, -splitTime * 1.0f, 0);
+                glRotatef(splitTime * 240.0f, 0, 0, 1);
+                GLUquadric* quad1 = gluNewQuadric();
+                gluQuadricNormals(quad1, GLU_SMOOTH);
+                gluSphere(quad1, 0.4f, 16, 8);
+                gluDeleteQuadric(quad1);
+                glPopMatrix();
+
+                glPushMatrix();
+                glTranslatef(0.3f + splitTime * 0.7f, -splitTime * 1.0f, 0);
+                glRotatef(-splitTime * 240.0f, 0, 0, 1);
+                GLUquadric* quad2 = gluNewQuadric();
+                gluQuadricNormals(quad2, GLU_SMOOTH);
+                gluSphere(quad2, 0.4f, 16, 8);
+                gluDeleteQuadric(quad2);
+                glPopMatrix();
+                break;
+            }
+
+            glEnable(GL_LIGHTING); // reactivate lighting after split drawing
         }
+
         
         glPopMatrix();
     }
@@ -839,86 +925,169 @@ void GameWidget::configureProjectileTrajectory(ProjectileRenderData& projectile)
                                  0.5f * 9.8f * desiredTime);
     }
 }
+float distanceBetweenSegments(
+    const QVector3D& p1, const QVector3D& q1,
+    const QVector3D& p2, const QVector3D& q2);
 
 // Add this method to detect collisions between sword and projectiles in the hit zone
 void GameWidget::checkHitZoneCollisions()
 {
-    // Get current sword position
+    // Get sword endpoints
     QVector3D handlePos, tipPos;
     getSwordEndpoints(handlePos, tipPos);
-    
-    // Define the hit cylinder parameters (match drawHitCylinder)
+
+    // Define the hit cylinder zone
     const float cylinderRadius = 4.0f;
     const float cylinderHeight = 3.0f;
-    const QVector3D cylinderCenter(0.0f, 1.0f, 3.0f); // Match the translation in drawHitCylinder
-    
-    // Check each projectile
-    QMutableListIterator<ProjectileRenderData> i(m_projectiles);
+    const QVector3D cylinderCenter(0.0f, 1.0f, 3.0f);
+
+    QVector3D swordVector = tipPos - handlePos;
+    float swordLength = swordVector.length();
+    QVector3D swordDir = swordVector.normalized();
+
     int index = 0;
-    
+    QMutableListIterator<ProjectileRenderData> i(m_projectiles);
+
     while (i.hasNext()) {
-        ProjectileRenderData &proj = i.next();
-        
+        ProjectileRenderData& proj = i.next();
+
         if (proj.state != ProjectileRenderData::ACTIVE) {
-            index++;
+            ++index;
             continue;
         }
-        
-        // Calculate current projectile position
-        float timeActive = m_elapsedTime - proj.spawnTime;
-        QVector3D projPos = calculateProjectilePosition(proj, timeActive);
-        
-        // 1. First check if projectile is in hit cylinder (semi-cylindrical zone)
-        // Distance from cylinder center axis (x and z only)
-        float dx = projPos.x() - cylinderCenter.x();
-        float dz = projPos.z() - cylinderCenter.z();
-        float distanceFromAxis = sqrt(dx*dx + dz*dz);
-        
-        // Check if projectile is within cylinder radius and height and in front half
-        bool inCylinderRadius = distanceFromAxis <= cylinderRadius;
-        bool inCylinderHeight = projPos.y() >= cylinderCenter.y() && 
-                               projPos.y() <= cylinderCenter.y() + cylinderHeight;
-        bool inFrontHalf = projPos.z() >= cylinderCenter.z();
-        
-        // If within hit cylinder, check for sword collision
-        if (inCylinderRadius && inCylinderHeight && inFrontHalf) {
-            // 2. Check if sword intersects with projectile
-            // Simplified sword collision using line-sphere intersection
-            // Treat projectile as a sphere
-            const float projectileRadius = 0.5f;
-            
-            // Calculate closest point on sword line segment to projectile center
-            QVector3D swordVector = tipPos - handlePos;
-            float swordLength = swordVector.length();
-            QVector3D swordDirection = swordVector / swordLength;
-            
-            // Vector from handle to projectile
-            QVector3D handleToProj = projPos - handlePos;
-            
-            // Project handleToProj onto swordDirection
-            float projectionLength = QVector3D::dotProduct(handleToProj, swordDirection);
-            
-            // Clamp projection to sword segment
-            projectionLength = qMax(0.0f, qMin(projectionLength, swordLength));
-            
-            // Closest point on sword line to projectile
-            QVector3D closestPointOnSword = handlePos + swordDirection * projectionLength;
-            
-            // Distance from closest point to projectile center
-            float distance = (closestPointOnSword - projPos).length();
-            
-            // If distance is less than projectile radius, we have a hit
-            if (distance <= projectileRadius) {
-            // Split the projectile and update score
-            splitProjectile(index);
-            
-            // Fixed score value per slice
-            const int points = 10;
-            qDebug() << "Projectile sliced! Adding" << points << "points";
-            emit scoreChanged(points);
+
+        float t = m_elapsedTime - proj.spawnTime;
+        QVector3D pos = calculateProjectilePosition(proj, t);
+
+        // Basic spatial filter (is it in the hit zone?)
+        float dx = pos.x() - cylinderCenter.x();
+        float dz = pos.z() - cylinderCenter.z();
+        float distXZ = std::sqrt(dx * dx + dz * dz);
+
+        bool inRadius = distXZ <= cylinderRadius;
+        bool inHeight = pos.y() >= cylinderCenter.y() &&
+                        pos.y() <= cylinderCenter.y() + cylinderHeight;
+        bool inFront = pos.z() >= cylinderCenter.z();
+
+        if (!(inRadius && inHeight && inFront)) {
+            ++index;
+            continue;
+        }
+
+        float projectileRadius = getProjectileCollisionRadius(proj.type);
+
+        if (proj.type == ProjectileRenderData::CYLINDER) {
+            // More accurate detection: sword segment vs. cylinder axis
+            float cylinderLength = 2.0f;
+            QVector3D cylCenter = pos;
+            QVector3D cylHalfVec = QVector3D(1.0f, 0.0f, 0.0f) * (cylinderLength * 0.5f);
+            QVector3D cylStart = cylCenter - cylHalfVec;
+            QVector3D cylEnd = cylCenter + cylHalfVec;
+
+            float dist = distanceBetweenSegments(handlePos, tipPos, cylStart, cylEnd);
+
+            if (dist <= 0.5f) { // match cylinder radius
+                splitProjectile(index);
+                emit scoreChanged(10);
+                qDebug() << "Cylinder HIT at index" << index;
+            }
+        if (proj.type == ProjectileRenderData::CONE) {
+            QVector3D coneStart = pos;
+            QVector3D coneEnd = pos + QVector3D(0.0f, 0.0f, 2.0f); // matches drawCone()
+
+            float dist = distanceBetweenSegments(handlePos, tipPos, coneStart, coneEnd);
+
+            if (dist <= 0.6f) { // match base radius
+                splitProjectile(index);
+                emit scoreChanged(10);
+                qDebug() << "Cone HIT at index" << index;
             }
         }
-        
-        index++;
+        if (proj.type == ProjectileRenderData::PYRAMID) {
+            QVector3D baseCenter = pos; // base at y = 0
+            QVector3D tip = pos + QVector3D(0.0f, 1.6f, 0.0f); // tip at y = +1.6
+
+            float dist = distanceBetweenSegments(handlePos, tipPos, baseCenter, tip);
+
+            if (dist <= 1.0f) { // ~half diagonal of base
+                splitProjectile(index);
+                emit scoreChanged(10);
+                qDebug() << "Pyramid HIT at index" << index;
+            }
+        }
+
+        } else {
+            // Default sphere-based collision
+            QVector3D toProj = pos - handlePos;
+            float projLen = QVector3D::dotProduct(toProj, swordDir);
+            projLen = std::clamp(projLen, 0.0f, swordLength);
+            QVector3D closest = handlePos + swordDir * projLen;
+
+            float distToSword = (closest - pos).length();
+
+            if (distToSword <= projectileRadius) {
+                splitProjectile(index);
+                emit scoreChanged(10);
+                qDebug() << "Default HIT at index" << index;
+            }
+        }
+
+        ++index;
     }
+}
+
+
+
+float GameWidget::getProjectileCollisionRadius(ProjectileRenderData::Type type) const {
+    switch (type) {
+    case ProjectileRenderData::CYLINDER: return 1.0f;  // length is 2
+    case ProjectileRenderData::CONE:     return 0.7f;  // height = 2, base = 0.6
+    case ProjectileRenderData::CUBE:     return 1.3f;  // side = 2
+    case ProjectileRenderData::PYRAMID:  return 1.2f;  // base 2, height 1.6
+    default:                             return 0.6f;
+    }
+}
+
+float distanceBetweenSegments(
+    const QVector3D& p1, const QVector3D& q1,
+    const QVector3D& p2, const QVector3D& q2)
+{
+    QVector3D d1 = q1 - p1;
+    QVector3D d2 = q2 - p2;
+    QVector3D r = p1 - p2;
+
+    float a = QVector3D::dotProduct(d1, d1);
+    float e = QVector3D::dotProduct(d2, d2);
+    float f = QVector3D::dotProduct(d2, r);
+
+    float s, t;
+
+    if (a <= 1e-6f && e <= 1e-6f) {
+        return (p1 - p2).length();
+    }
+    if (a <= 1e-6f) {
+        s = 0.0f;
+        t = std::clamp(f / e, 0.0f, 1.0f);
+    } else {
+        float c = QVector3D::dotProduct(d1, r);
+        if (e <= 1e-6f) {
+            t = 0.0f;
+            s = std::clamp(-c / a, 0.0f, 1.0f);
+        } else {
+            float b = QVector3D::dotProduct(d1, d2);
+            float denom = a * e - b * b;
+            if (denom != 0.0f) {
+                s = std::clamp((b * f - c * e) / denom, 0.0f, 1.0f);
+            } else {
+                s = 0.0f;
+            }
+            t = (b * s + f) / e;
+            t = std::clamp(t, 0.0f, 1.0f);
+        }
+    }
+
+    QVector3D c1 = p1 + d1 * s;
+    QVector3D c2 = p2 + d2 * t;
+
+    return (c1 - c2).length();
 }
