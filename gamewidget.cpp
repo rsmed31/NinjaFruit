@@ -10,15 +10,11 @@ extern "C" {
 
 // Vertex data for drawing primitives
 static const GLfloat cylinderVertices[] = {
-    // Basic cylinder vertices would go here
-    // For brevity, only part of the data is shown
-    // In a real implementation, you would generate vertices
-    // programmatically with proper normals and texture coordinates
+
 };
 
 static const GLuint cylinderIndices[] = {
-    // Triangle indices for the cylinder
-    // Would be generated programmatically
+
 };
 
 GameWidget::GameWidget(QWidget *parent)
@@ -266,9 +262,6 @@ void GameWidget::drawDistanceIndicators()
         }
         glEnd();
         
-        // Draw distance text if needed
-        // This would require more complex text rendering which 
-        // is omitted for simplicity
     }
     
     // After drawing the ground plane and marker rings, add hit region overlay:
@@ -325,7 +318,7 @@ void GameWidget::drawHitCylinder() {
     const float yCenter = 1.5f;
     const float height = 9.0f;
     const int segments = 64;
-    const int rings = 10;
+    const int rings = 14;
 
     glTranslatef(0.0f, yCenter, z);
 
@@ -346,7 +339,7 @@ void GameWidget::drawHitCylinder() {
     }
 
     // Vertical lines
-    for (int i = 0; i <= segments / 2; ++i) {  // 🔺 only front half (180°)
+    for (int i = 0; i <= segments; ++i) {  // 🔺 only front half (180°)
         float angle = M_PI * i / (segments / 2);
         float x = radius * cos(angle);
         float z = radius * sin(angle);
@@ -375,8 +368,8 @@ void GameWidget::getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos)
 
     // Calculate handle position (base of sword) in world coordinates
     // Match the translation in drawVirtualHand
-    handlePos = QVector3D(handX, handY + 0.5f, 3.0f);
-
+    handlePos = QVector3D(handX, handY + 0.5f, 0.75f);
+    
     // Rotation angles from drawVirtualHand (should match exactly)
     float rotZ = 15.0f * M_PI / 180.0f;  // 15° in radians
     float rotY = -20.0f * M_PI / 180.0f; // -20° in radians
@@ -419,8 +412,6 @@ void GameWidget::drawVirtualHand()
     float x = m_handPosition.x();  // Already normalized in [-7.5, 7.5]
     float z = 0.75f;
     float y = m_handPosition.y() * 0.6f;  // 🔺 broader vertical sweep
-
-
     
     // Position sword closer to camera for better first-person feel
     // Move z value closer to camera (from 0.75f to 3.0f)
@@ -804,26 +795,7 @@ void GameWidget::createShaders()
 
 void GameWidget::createGeometry()
 {
-    // For this minimal example, we're using immediate mode (glBegin/glEnd)
-    // rather than creating proper vertex buffers
-    // In a real application, you should use modern OpenGL with VBOs and VAOs
-    
-    // Example of setting up vertex arrays
-    // m_vao.create();
-    // m_vao.bind();
-    //
-    // m_vertexBuffer.create();
-    // m_vertexBuffer.bind();
-    // m_vertexBuffer.allocate(cylinderVertices, sizeof(cylinderVertices));
-    //
-    // m_indexBuffer.create();
-    // m_indexBuffer.bind();
-    // m_indexBuffer.allocate(cylinderIndices, sizeof(cylinderIndices));
-    //
-    // m_program->enableAttributeArray("position");
-    // m_program->setAttributeBuffer("position", GL_FLOAT, 0, 3, sizeof(GLfloat) * 8);
-    //
-    // m_vao.release();
+
 }
 
 void GameWidget::updateProjectilePositions()
@@ -836,8 +808,7 @@ void GameWidget::updateProjectilePositions()
         // Avoid unused variable warning
         Q_UNUSED(calculateProjectilePosition(proj, timeActive));
         
-        // ❌ DO NOT deactivate or remove based on Z or active time.
-        // ❌ Leave all projectiles active so that GameEngine can decide their fate.
+
     }
 }
 
@@ -856,9 +827,6 @@ void GameWidget::configureProjectileTrajectory(ProjectileRenderData& projectile)
     // Using projectile motion equations
     bool willHitZone = false;
     
-    // Solve for time when z coordinate will be in hit zone range
-    // z = z₀ + v₀t + 0.5at²
-    // For z axis, we have: z = z₀ + v_z*t (no gravity in z direction)
     
     // Time to reach back of hit zone (z = 0)
     if (projectile.velocity.z() < 0) {  // Only if moving toward screen
@@ -869,9 +837,6 @@ void GameWidget::configureProjectileTrajectory(ProjectileRenderData& projectile)
         // Projectile passes through hit zone if timeToBackOfZone > 0
         if (timeToBackOfZone > 0.0f && timeToFrontOfZone > timeToBackOfZone) {
             willHitZone = true;
-            
-            // We can use timeToFrontOfZone here if needed
-            // For debugging: qDebug() << "Projectile will hit zone between" << timeToBackOfZone << "and" << timeToFrontOfZone;
         }
     }
     
@@ -906,9 +871,10 @@ void GameWidget::checkHitZoneCollisions()
     getSwordEndpoints(handlePos, tipPos);
 
     // Adjusted hit cylinder zone
-    const float cylinderRadius = 4.0f; // Reduced radius for better alignment
-    const float cylinderHeight = 7.0f; // Reduced height for better alignment
-    const QVector3D cylinderCenter(0.0f, 1.0f, 0.5f); // Moved closer to the hit zone
+    const float cylinderRadius = 6.0f;
+    const float cylinderHeight = 9.0f;
+    const QVector3D cylinderCenter(0.0f, 1.5f, 0.75f);  // ✅ match mesh in drawHitCylinder
+    
 
     QVector3D swordVector = tipPos - handlePos;
     float swordLength = swordVector.length();
