@@ -152,8 +152,10 @@ void GameWidget::updateScene()
 {
     // Track elapsed time
     m_elapsedTime += 0.016f; // ~16ms per frame at 60 FPS
-    m_handPosition.setX(0.85f * m_handPosition.x() + 0.15f * m_lastValidHandPosition.x());
-    m_handPosition.setY(0.85f * m_handPosition.y() + 0.15f * m_lastValidHandPosition.y());
+    // Reduce inertia so sword follows your hand more closely
+    // Add more smoothing to reduce vibration (80% old, 20% new)
+    m_handPosition.setX(0.8f * m_handPosition.x() + 0.2f * m_lastValidHandPosition.x());
+    m_handPosition.setY(0.8f * m_handPosition.y() + 0.2f * m_lastValidHandPosition.y());
 
     // Check for sword-projectile collisions
     checkHitZoneCollisions();
@@ -311,12 +313,12 @@ void GameWidget::drawHitCylinder() {
 
     glPushMatrix();
 
-    const float radius = 6.0f;
-    const float z = 3.0f;    // ← match sword plane
-    const float yCenter = 1.5f;
-    const float height = 9.0f;
-    const int segments = 64;
-    const int rings = 14;
+    const float radius   = 6.0f;
+    const float z        = 2.0f;          // Slicing plane
+    const float height   = 10.0f;         // Full game height
+    const float yCenter  = height / 2.0f; // Center at 5.0f
+    const int segments   = 64;            // Number of segments for cylinder
+    const int rings      = 14;            // Number of rings for height division
 
     glTranslatef(0.0f, yCenter, z);
 
@@ -328,7 +330,7 @@ void GameWidget::drawHitCylinder() {
         float y = -height / 2.0f + j * (height / rings);
         glBegin(GL_LINE_LOOP);
         for (int i = 0; i < segments; ++i) {
-            float angle = 2 * M_PI * i / segments;
+            float angle = i * 2.0f * M_PI / segments;
             float x = radius * cos(angle);
             float z = radius * sin(angle);
             glVertex3f(x, y, z);
@@ -366,7 +368,7 @@ void GameWidget::getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos)
 
     // Calculate handle position (base of sword) in world coordinates
     // Match the translation in drawVirtualHand
-    handlePos = QVector3D(handX, handY + 0.5f, 3.0f);  // Adjust z-plane
+    handlePos = QVector3D(handX, handY + 0.5f, 2.0f);  // Match cylinder plane
     
     // Rotation angles from drawVirtualHand (should match exactly)
     float rotZ = 15.0f * M_PI / 180.0f;  // 15° in radians
@@ -408,7 +410,7 @@ void GameWidget::drawVirtualHand()
     float angle = m_handPosition.x() * (M_PI / 2.0f); // from -90° to +90°
     float radius = 6.0f; // ✅ match cylinder radius
     float x = m_handPosition.x();  // Already normalized in [-7.5, 7.5]
-    float z = 3.0f;  // Bring sword forward into the hit-zone plane
+    float z = 2.0f;  // Bring sword up onto the cylinder mesh
     float y = m_handPosition.y() * 0.6f;  // 🔺 broader vertical sweep
     
     // Position sword closer to camera for better first-person feel
@@ -425,7 +427,7 @@ void GameWidget::drawVirtualHand()
     glRotatef(-20.0f, 0.0f, 1.0f, 0.0f); // Less rotation on Y axis
     
     // Increase scale for bigger sword appearance
-    float swordScale = 0.12f;
+    float swordScale = 0.08f;  // Make the blade a bit smaller
     glScalef(swordScale, swordScale, swordScale);
 
     
