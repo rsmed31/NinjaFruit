@@ -274,27 +274,25 @@ void GameWidget::drawDistanceIndicators()
     // with a more visible color and border
     glColor4f(0.2f, 1.0f, 0.2f, 0.3f); // More saturated green
     glBegin(GL_QUADS);
-      glVertex3f(-8.0f, 0.001f, 0.0f);  // Closer to camera
-      glVertex3f(8.0f, 0.001f, 0.0f);
-      glVertex3f(8.0f, 0.001f, 1.5f);
-      glVertex3f(-8.0f, 0.001f, 1.5f);
+      glVertex3f(-8.0f, 0.001f, 2.5f);
+      glVertex3f( 8.0f, 0.001f, 2.5f);
+      glVertex3f( 8.0f, 0.001f, 3.5f);
+      glVertex3f(-8.0f, 0.001f, 3.5f);
     glEnd();
     
     // Draw a border around the hit zone
     glColor4f(1.0f, 1.0f, 1.0f, 0.8f); // Clear white border
     glLineWidth(2.0f);
     glBegin(GL_LINE_LOOP);
-      glVertex3f(-8.0f, 0.005f, 0.0f);
-      glVertex3f(8.0f, 0.005f, 0.0f);
-      glVertex3f(8.0f, 0.005f, 1.5f);
-      glVertex3f(-8.0f, 0.005f, 1.5f);
+      glVertex3f(-8.0f, 0.005f, 2.5f);
+      glVertex3f( 8.0f, 0.005f, 2.5f);
+      glVertex3f( 8.0f, 0.005f, 3.5f);
+      glVertex3f(-8.0f, 0.005f, 3.5f);
     glEnd();
     glLineWidth(1.0f);
     
-    // Add a "HIT ZONE" text indicator (simulated with lines for simplicity)
-    glColor4f(1.0f, 1.0f, 1.0f, 0.7f);
     glPushMatrix();
-    glTranslatef(0.0f, 0.01f, 0.75f); // Center of hit zone
+    glTranslatef(0.0f, 0.01f, 3.0f);    // center at new plane
     // We'd need actual text rendering here - simplified with a marker
     glBegin(GL_LINES);
       glVertex3f(-2.0f, 0.0f, 0.0f);
@@ -314,7 +312,7 @@ void GameWidget::drawHitCylinder() {
     glPushMatrix();
 
     const float radius = 6.0f;
-    const float z = 0.75f;
+    const float z = 3.0f;    // ← match sword plane
     const float yCenter = 1.5f;
     const float height = 9.0f;
     const int segments = 64;
@@ -368,7 +366,7 @@ void GameWidget::getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos)
 
     // Calculate handle position (base of sword) in world coordinates
     // Match the translation in drawVirtualHand
-    handlePos = QVector3D(handX, handY + 0.5f, 0.75f);
+    handlePos = QVector3D(handX, handY + 0.5f, 3.0f);  // Adjust z-plane
     
     // Rotation angles from drawVirtualHand (should match exactly)
     float rotZ = 15.0f * M_PI / 180.0f;  // 15° in radians
@@ -410,12 +408,12 @@ void GameWidget::drawVirtualHand()
     float angle = m_handPosition.x() * (M_PI / 2.0f); // from -90° to +90°
     float radius = 6.0f; // ✅ match cylinder radius
     float x = m_handPosition.x();  // Already normalized in [-7.5, 7.5]
-    float z = 0.75f;
+    float z = 3.0f;  // Bring sword forward into the hit-zone plane
     float y = m_handPosition.y() * 0.6f;  // 🔺 broader vertical sweep
     
     // Position sword closer to camera for better first-person feel
     // Move z value closer to camera (from 0.75f to 3.0f)
-    glTranslatef(x, y + 0.8f, z); // 🟢 Center better vertically
+    glTranslatef(x, y + 0.8f, z); // Adjust z-plane
 
     
     // Calculate and emit sword endpoints for collision detection
@@ -873,7 +871,7 @@ void GameWidget::checkHitZoneCollisions()
     // Adjusted hit cylinder zone
     const float cylinderRadius = 6.0f;
     const float cylinderHeight = 9.0f;
-    const QVector3D cylinderCenter(0.0f, 1.5f, 0.75f);  // ✅ match mesh in drawHitCylinder
+    const QVector3D cylinderCenter(0.0f, 1.5f, 3.0f);  // Align with sword plane
     
 
     QVector3D swordVector = tipPos - handlePos;

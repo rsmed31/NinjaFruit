@@ -142,8 +142,8 @@ void GameEngine::checkCollisions()
     // Define hit zone dimensions matching the visual representation
     const float HIT_MIN_X = -8.0f;
     const float HIT_MAX_X = 8.0f;
-    const float HIT_MIN_Z = 0.0f;
-    const float HIT_MAX_Z = 1.5f;
+    const float HIT_MIN_Z = 2.5f;  // around 3.0 ± 0.5
+    const float HIT_MAX_Z = 3.5f;
     
     for (int i = 0; i < m_projectiles.size(); i++) {
         Projectile& projectile = m_projectiles[i];
