@@ -15,7 +15,6 @@ public:
     };
 
 
-
     
     enum State {
         ACTIVE,    // Normal flying state
