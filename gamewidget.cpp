@@ -559,27 +559,47 @@ void GameWidget::drawCone() {
 
     gluDeleteQuadric(quad);
 }
-
-
+void GameWidget::loadTextures() {
+QImage image(":/textures/carrot.jpg");
+if (!image.isNull()) {
+    m_cylinderTexture = new QOpenGLTexture(image.mirrored());
+    m_cylinderTexture->setMinificationFilter(QOpenGLTexture::LinearMipMapLinear);
+    m_cylinderTexture->setMagnificationFilter(QOpenGLTexture::Linear);
+    m_cylinderTexture->setWrapMode(QOpenGLTexture::Repeat);
+    qDebug() << "✅ Texture carrot.jpg chargée";
+} else {
+    qDebug() << "❌ Erreur : impossible de charger carrot.jpg";
+}
+}
 
 void GameWidget::drawCylinder() {
+    if (m_cylinderTexture) {
+        glEnable(GL_TEXTURE_2D);
+        m_cylinderTexture->bind();
+    }
+
     GLUquadric* quad = gluNewQuadric();
+    gluQuadricTexture(quad, GL_TRUE); // Active les coordonnées de texture
     gluQuadricNormals(quad, GLU_SMOOTH);
 
-    glRotatef(90, 0.0f, 1.0f, 0.0f); // align with X axis
+    glRotatef(90, 0.0f, 1.0f, 0.0f);
 
-    float radius = 0.2f;  // Reduced from 0.5f
-    float length = 1.0f;  // Reduced from 2.0f
+    float radius = 0.5f;
+    float length = 2.0f;
 
-    gluCylinder(quad, radius, radius, length, 16, 1);
-
-    // Draw caps
-    gluDisk(quad, 0.0f, radius, 16, 1);
+    gluCylinder(quad, radius, radius, length, 32, 1);
+    gluDisk(quad, 0.0f, radius, 32, 1);
     glTranslatef(0.0f, 0.0f, length);
-    gluDisk(quad, 0.0f, radius, 16, 1);
+    gluDisk(quad, 0.0f, radius, 32, 1);
 
     gluDeleteQuadric(quad);
+
+    if (m_cylinderTexture) {
+        glDisable(GL_TEXTURE_2D);
+    }
 }
+
+
 
 
 
