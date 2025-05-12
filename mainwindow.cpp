@@ -220,7 +220,7 @@ void MainWindow::setupConnections()
     connect(gameWidget, &GameWidget::scoreChanged, gameEngine, &GameEngine::addScore);
     connect(gameEngine, &GameEngine::projectileAdded, 
             [this](const Projectile& proj) {
-                gameWidget->launchProjectile(proj.getPosition(), proj.getVelocity());
+                gameWidget->launchProjectile(proj);
             });
     connect(gameEngine, &GameEngine::projectileSplit, 
             [this](int index) {

@@ -8,10 +8,10 @@ class Projectile
 {
 public:
     enum Type {
-        CUBE = 0,        // Faces planes
-        PYRAMID = 1,     // Faces planes
-        CYLINDER = 2,    // Quadrique
-        CONE = 3         // Quadrique
+        CONE,
+        CYLINDER,
+        CUBE,
+        PYRAMID
     };
 
 
@@ -70,3 +70,4 @@ private:
 };
 
 #endif // PROJECTILE_H
+

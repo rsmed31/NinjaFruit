@@ -243,7 +243,26 @@ void GameEngine::updateProjectiles(float deltaTime)
 
 Projectile GameEngine::createRandomProjectile()
 {
-    Projectile::Type type = Projectile::CYLINDER;
+    // Randomly select a projectile type
+    int randomType = QRandomGenerator::global()->bounded(4); // Generate a random number from 0 to 3
+    Projectile::Type type;
+    
+    switch (randomType) {
+        case 0:
+            type = Projectile::CONE;
+            break;
+        case 1:
+            type = Projectile::CYLINDER;
+            break;
+        case 2:
+            type = Projectile::CUBE;
+            break;
+        case 3:
+            type = Projectile::PYRAMID;
+            break;
+        default:
+            type = Projectile::CYLINDER; // Fallback, should not happen
+    }
     
     Projectile projectile(type);
     
@@ -320,3 +339,4 @@ void GameEngine::addScore(int points)
     qDebug() << "Adding" << points << "points, new score:" << m_score;
     emit scoreChanged(m_score);
 }
+

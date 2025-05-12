@@ -10,10 +10,49 @@
 #include <QVector3D>
 #include <QTimer>
 #include <QList>
-#include <QMap>  // Add this for texture map
+#include <QRandomGenerator>
 
-// Forward declaration - class should be forward declared but not used directly
-class Projectile;
+// Include the full Projectile class rather than forward declaring it
+#include "projectile.h"
+
+// Define ProjectileType enum
+enum class ProjectileType {
+    APPLE,
+    ORANGE,
+    BANANA,
+    WATERMELON,
+    CONE,
+    CYLINDER,
+    CUBE,
+    PYRAMID
+    // Add other types as needed
+};
+
+// Add this before the GameWidget class definition
+struct ProjectileRenderData {
+    enum Type {
+        CONE,
+        CYLINDER,
+        CUBE,
+        PYRAMID
+        // Remove unused fruit types (APPLE, ORANGE, etc.)
+    };
+    
+    enum State {
+        INACTIVE,
+        ACTIVE,
+        SPLIT,
+        DESTROYED
+    };
+    
+    QVector3D position;
+    QVector3D velocity;
+    Type type;
+    State state;
+    bool active;
+    float spawnTime;
+    // Add other rendering properties as needed
+};
 
 class GameWidget : public QOpenGLWidget, protected QOpenGLFunctions
 {
@@ -26,14 +65,17 @@ public:
     // Set the position of the virtual hand
     void setHandPosition(float x, float y);
     
-    // Launch a new projectile
-    void launchProjectile(const QVector3D& position, const QVector3D& velocity);
+    // Launch a new projectile (keep only the Projectile object version)
+    void launchProjectile(const Projectile& projectile);
     
     // Clear all projectiles
     void clearProjectiles();
     
     // Split a projectile at the specified index
     void splitProjectile(int index);
+    
+    // Add this function declaration
+    void createRandomProjectile();
 
 signals:
     // Add this signal to notify when sword position changes
@@ -55,15 +97,6 @@ private:
     QVector3D m_handPosition;
 
     // Projectiles
-    struct ProjectileRenderData {
-        QVector3D position;
-        QVector3D velocity;
-        float spawnTime;
-        bool active;
-        enum State { ACTIVE, SPLIT } state;
-        enum Type {CONE,CYLINDER,CUBE,PYRAMID} type;
-    };
-
     QList<ProjectileRenderData> m_projectiles;
     
     // Camera and view properties
@@ -103,6 +136,13 @@ private:
     void createShaders();
     void createGeometry();
     
+    // New functions for textures
+    void loadTextures();
+    GLuint m_textures[4]; // Array for texture IDs
+    
+    // Helper function to map Projectile::Type to ProjectileRenderData::Type
+    ProjectileRenderData::Type mapProjectileType(Projectile::Type type);
+    
     // Physics
     void updateProjectilePositions();
     QVector3D calculateProjectilePosition(const ProjectileRenderData& proj, float time);
@@ -124,10 +164,6 @@ private:
 
     float getProjectileCollisionRadius(ProjectileRenderData::Type type) const;
 
-    // Texture handling
-    QMap<ProjectileRenderData::Type, GLuint> m_textures;
-    void loadTextures();
-    bool bindTextureForType(ProjectileRenderData::Type type);
 };
 
 #endif // GAMEWIDGET_H

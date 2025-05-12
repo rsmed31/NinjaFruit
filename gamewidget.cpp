@@ -7,7 +7,6 @@ extern "C" {
 #include <QDateTime>
 #include <QDebug>
 #include <QRandomGenerator> // Add this include for random number generation
-#include <QImage>           // Add this for texture loading
 
 // Vertex data for drawing primitives
 static const GLfloat cylinderVertices[] = {
@@ -71,21 +70,23 @@ void GameWidget::initializeGL()
     (void)cylinderVertices;
     (void)cylinderIndices;
 
-    initializeOpenGLFunctions();
     // Initialize OpenGL functions
     initializeOpenGLFunctions();
     glClearColor(0.05f, 0.05f, 0.1f, 1.0f); // Darker background
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
 
+    // Enable texturing
+    glEnable(GL_TEXTURE_2D);
+
+    // Load textures
+    loadTextures();
+
     // Enable lighting for better 3D appearance
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
-    glEnable(GL_COLOR_MATERIAL);
+    // glEnable(GL_COLOR_MATERIAL); // REMOVE this line to avoid color/lighting conflicts
 
-    // Enable texturing
-    glEnable(GL_TEXTURE_2D);
-    
     // Setup materials
     GLfloat ambient[] = {0.2f, 0.2f, 0.2f, 1.0f};
     GLfloat diffuse[] = {0.8f, 0.8f, 0.8f, 1.0f};
@@ -97,9 +98,6 @@ void GameWidget::initializeGL()
     glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
     glLightfv(GL_LIGHT0, GL_POSITION, position);
 
-    // Load textures
-    loadTextures();
-    
     // Create shaders and geometry
     createShaders();
     createGeometry();
@@ -171,46 +169,36 @@ void GameWidget::updateScene()
     update();
 }
 
-void GameWidget::launchProjectile(const QVector3D& position, const QVector3D& velocity)
-{
-    ProjectileRenderData projectile;
-    projectile.position = position;
-
-    // Modify velocity to ensure projectiles head toward the screen
-    // Start with the provided velocity but adjust it to target the hit zone
-    QVector3D adjustedVelocity = velocity;
-
-    // Push projectile forward toward the player with a minimum z-velocity
-    if (adjustedVelocity.z() > -5.0f) {
-        adjustedVelocity.setZ(-5.0f - (QRandomGenerator::global()->bounded(5)));
+// Fix the function implementation
+ProjectileRenderData::Type GameWidget::mapProjectileType(Projectile::Type type) {
+    switch (type) {
+        case Projectile::CONE:
+            return ProjectileRenderData::CONE;
+        case Projectile::CYLINDER:
+            return ProjectileRenderData::CYLINDER;
+        case Projectile::CUBE:
+            return ProjectileRenderData::CUBE;
+        case Projectile::PYRAMID:
+            return ProjectileRenderData::PYRAMID;
+        default:
+            return ProjectileRenderData::CONE; // Default case
     }
+}
 
-
-
-    // Reduce extreme lateral movements
-    if (qAbs(adjustedVelocity.x()) > 8.0f) {
-        adjustedVelocity.setX(adjustedVelocity.x() > 0 ? 8.0f : -8.0f);
-    }
-
-    // Ensure upward launch to give time to hit them
-    if (adjustedVelocity.y() < 2.0f) {
-        adjustedVelocity.setY(2.0f + (QRandomGenerator::global()->bounded(4)));
-    }
-
-    projectile.velocity = adjustedVelocity;
-    projectile.spawnTime = m_elapsedTime;
-    projectile.active = true;
-    projectile.state = ProjectileRenderData::ACTIVE;
-
-    // Set random projectile type among the 4 required types
-    int typeValue = QRandomGenerator::global()->bounded(4); // 0 to 3
-    projectile.type = static_cast<ProjectileRenderData::Type>(typeValue);
-
-
-    // Verify the projectile will actually reach the screen
-    configureProjectileTrajectory(projectile);
-
-    m_projectiles.append(projectile);
+// Keep only the Projectile object version
+void GameWidget::launchProjectile(const Projectile& projectile) {
+    ProjectileRenderData projData;
+    projData.position = projectile.getPosition();
+    projData.velocity = projectile.getVelocity();
+    projData.type = mapProjectileType(projectile.getType());
+    projData.spawnTime = m_elapsedTime;
+    projData.active = true;
+    projData.state = ProjectileRenderData::ACTIVE;
+    
+    // Verify the projectile will reach the screen
+    configureProjectileTrajectory(projData);
+    
+    m_projectiles.append(projData);
 }
 
 // Add a new method to handle projectile splitting
@@ -550,26 +538,24 @@ void GameWidget::drawVirtualHand()
 }
 
 void GameWidget::drawCone() {
-    GLUquadric* quad = gluNewQuadric();
-    gluQuadricNormals(quad, GLU_SMOOTH);
-    
-    // Enable texturing and bind the cone texture
+    // Enable texturing
     glEnable(GL_TEXTURE_2D);
-    if (bindTextureForType(ProjectileRenderData::CONE)) {
-        gluQuadricTexture(quad, GL_TRUE);
-    } else {
-        glDisable(GL_TEXTURE_2D);
-    }
+    glBindTexture(GL_TEXTURE_2D, m_textures[3]); // Cone texture
+    
+    GLUquadric* quad = gluNewQuadric();
+    gluQuadricTexture(quad, GL_TRUE); // Enable texture coordinates
+    gluQuadricNormals(quad, GLU_SMOOTH);
 
     glRotatef(-90, 1, 0, 0); // Align cone along Z axis
 
     float baseRadius = 0.6f;   // Wider base
     float height = 2.0f;       // Taller cone
 
-    gluCylinder(quad, baseRadius, 0.0f, height, 16, 8); // Cone shape with more segments
+    gluCylinder(quad, baseRadius, 0.0f, height, 16, 1); // Cone shape
+
 
     // Optional: add a base disk to close the bottom
-    gluDisk(quad, 0.0f, baseRadius, 16, 4);
+    gluDisk(quad, 0.0f, baseRadius, 16, 1);
 
     gluDeleteQuadric(quad);
     glDisable(GL_TEXTURE_2D);
@@ -578,28 +564,25 @@ void GameWidget::drawCone() {
 
 
 void GameWidget::drawCylinder() {
-    GLUquadric* quad = gluNewQuadric();
-    gluQuadricNormals(quad, GLU_SMOOTH);
-    
-    // Enable texturing and bind the cylinder texture
+    // Enable texturing
     glEnable(GL_TEXTURE_2D);
-    if (bindTextureForType(ProjectileRenderData::CYLINDER)) {
-        gluQuadricTexture(quad, GL_TRUE);
-    } else {
-        glDisable(GL_TEXTURE_2D);
-    }
+    glBindTexture(GL_TEXTURE_2D, m_textures[2]); // Cylinder (carrot) texture
+    
+    GLUquadric* quad = gluNewQuadric();
+    gluQuadricTexture(quad, GL_TRUE); // Enable texture coordinates
+    gluQuadricNormals(quad, GLU_SMOOTH);
 
     glRotatef(90, 0.0f, 1.0f, 0.0f); // align with X axis
 
     float radius = 0.2f;
     float length = 1.0f;
 
-    gluCylinder(quad, radius, radius, length, 16, 8);
+    gluCylinder(quad, radius, radius, length, 16, 1);
 
     // Draw caps
-    gluDisk(quad, 0.0f, radius, 16, 4);
+    gluDisk(quad, 0.0f, radius, 16, 1);
     glTranslatef(0.0f, 0.0f, length);
-    gluDisk(quad, 0.0f, radius, 16, 4);
+    gluDisk(quad, 0.0f, radius, 16, 1);
 
     gluDeleteQuadric(quad);
     glDisable(GL_TEXTURE_2D);
@@ -608,13 +591,11 @@ void GameWidget::drawCylinder() {
 
 
 void GameWidget::drawCube() {
-    float s = 0.5f;  // Half-length of cube sides
-
-    // Enable texturing and bind the cube texture
+    // Enable texturing
     glEnable(GL_TEXTURE_2D);
-    if (!bindTextureForType(ProjectileRenderData::CUBE)) {
-        glDisable(GL_TEXTURE_2D);
-    }
+    glBindTexture(GL_TEXTURE_2D, m_textures[0]); // Cube texture
+    
+    float s = 0.5f;  // half-length of side
 
     glBegin(GL_QUADS);
     // Front
@@ -622,60 +603,65 @@ void GameWidget::drawCube() {
     glTexCoord2f(1.0f, 0.0f); glVertex3f(s, -s, s);
     glTexCoord2f(1.0f, 1.0f); glVertex3f(s, s, s);
     glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, s, s);
+    
     // Back
-    glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, -s, -s);
-    glTexCoord2f(1.0f, 1.0f); glVertex3f(-s, s, -s);
-    glTexCoord2f(0.0f, 1.0f); glVertex3f(s, s, -s);
-    glTexCoord2f(0.0f, 0.0f); glVertex3f(s, -s, -s);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, -s, -s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, s, -s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, s, -s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, -s, -s);
+    
     // Left
     glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, -s, -s);
     glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, -s, s);
     glTexCoord2f(1.0f, 1.0f); glVertex3f(-s, s, s);
     glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, s, -s);
+    
     // Right
-    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, -s, -s);
-    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, s, -s);
-    glTexCoord2f(0.0f, 1.0f); glVertex3f(s, s, s);
-    glTexCoord2f(0.0f, 0.0f); glVertex3f(s, -s, s);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(s, -s, -s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(s, s, -s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, s, s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, -s, s);
+    
     // Top
-    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, s, -s);
-    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, s, s);
-    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, s, s);
-    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, s, -s);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, s, -s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, s, s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, s, s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, s, -s);
+    
     // Bottom
-    glTexCoord2f(1.0f, 1.0f); glVertex3f(-s, -s, -s);
-    glTexCoord2f(0.0f, 1.0f); glVertex3f(s, -s, -s);
-    glTexCoord2f(0.0f, 0.0f); glVertex3f(s, -s, s);
-    glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, -s, s);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, -s, -s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, -s, -s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, -s, s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, -s, s);
     glEnd();
     
     glDisable(GL_TEXTURE_2D);
 }
 
-// Update drawPyramid with texture coordinates
 void GameWidget::drawPyramid() {
-    float h = 1.6f;  // Height
-    float s = 1.0f;  // Half-length of the base sides
-
-    // Enable texturing and bind the pyramid texture
+    // Enable texturing
     glEnable(GL_TEXTURE_2D);
-    if (!bindTextureForType(ProjectileRenderData::PYRAMID)) {
-        glDisable(GL_TEXTURE_2D);
-    }
+    glBindTexture(GL_TEXTURE_2D, m_textures[1]); // Pyramid texture
+    
+    float h = 1.6f;   // height
+    float s = 1.0f;   // half-length of base sides
 
     glBegin(GL_TRIANGLES);
     // Front face
     glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0f, h, 0.0f);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, 0.0f, s);
     glTexCoord2f(1.0f, 0.0f); glVertex3f(s, 0.0f, s);
+    
     // Right face
     glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0f, h, 0.0f);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(s, 0.0f, s);
     glTexCoord2f(1.0f, 0.0f); glVertex3f(s, 0.0f, -s);
+    
     // Back face
     glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0f, h, 0.0f);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(s, 0.0f, -s);
     glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, 0.0f, -s);
+    
     // Left face
     glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0f, h, 0.0f);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, 0.0f, -s);
@@ -693,94 +679,30 @@ void GameWidget::drawPyramid() {
     glDisable(GL_TEXTURE_2D);
 }
 
-// Add texture loading function
-void GameWidget::loadTextures()
-{
-    // Map file paths to projectile types
-    struct TexInfo {
-        QString path;
-        ProjectileRenderData::Type type;
-    };
-    
-    QList<TexInfo> textures = {
-        { ":/textures/textures/cube.png", ProjectileRenderData::CUBE },
-        { ":/textures/textures/pyramid.jpg", ProjectileRenderData::PYRAMID },
-        { ":/textures/textures/cone.jpg", ProjectileRenderData::CONE },
-        { ":/textures/textures/carrot.jpg", ProjectileRenderData::CYLINDER }
-    };
-    
-    for (const auto& texInfo : textures) {
-        // Load image from resources
-        QImage img(texInfo.path);
-        if (img.isNull()) {
-            qDebug() << "Failed to load texture:" << texInfo.path;
-            continue;
-        }
-        
-        // Convert to OpenGL format (RGBA, power of two dimensions)
-        QImage glImg = img.convertToFormat(QImage::Format_RGBA8888).mirrored();
-        
-        // Generate texture ID
-        GLuint textureId;
-        glGenTextures(1, &textureId);
-        glBindTexture(GL_TEXTURE_2D, textureId);
-        
-        // Set texture parameters
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        
-        // Upload texture data
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glImg.width(), glImg.height(), 
-                     0, GL_RGBA, GL_UNSIGNED_BYTE, glImg.bits());
-        
-        // Store texture ID for this type
-        m_textures[texInfo.type] = textureId;
-        qDebug() << "Loaded texture" << texInfo.path << "as ID" << textureId << "for type" << texInfo.type;
-    }
-}
-
-// Helper function to bind the appropriate texture for a projectile type
-bool GameWidget::bindTextureForType(ProjectileRenderData::Type type)
-{
-    if (m_textures.contains(type)) {
-        glBindTexture(GL_TEXTURE_2D, m_textures[type]);
-        return true;
-    }
-    return false;
-}
-
-// Update the drawProjectiles method to work with textures
+// Update the drawProjectiles method to ensure they appear within view
 void GameWidget::drawProjectiles()
 {
-    // Enable lighting for 3D projectiles
     glEnable(GL_LIGHTING);
 
     for (const ProjectileRenderData& proj : m_projectiles) {
         if (!proj.active) continue;
 
-        // Calculate current position based on physics
         QVector3D currentPos = calculateProjectilePosition(proj, m_elapsedTime - proj.spawnTime);
 
         glPushMatrix();
-
-        // Position the projectile in world space
         glTranslatef(currentPos.x(), currentPos.y(), currentPos.z());
 
-        // Active vs split states
-        if (proj.state == ProjectileRenderData::ACTIVE) {
-            // Get material properties from the color but slightly dimmed to allow texture to show
-            float r = 0.8f, g = 0.8f, b = 0.8f;
-            GLfloat material_ambient[] = {r * 0.3f, g * 0.3f, b * 0.3f, 1.0f};
-            GLfloat material_diffuse[] = {r, g, b, 1.0f};
-            GLfloat material_specular[] = {0.5f, 0.5f, 0.5f, 1.0f};
-            glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
-            glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-            glMaterialfv(GL_FRONT, GL_SPECULAR, material_specular);
-            glMaterialf(GL_FRONT, GL_SHININESS, 25.0f);
+        // Set material properties for textured rendering
+        GLfloat material_diffuse[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+        GLfloat material_ambient[4] = {0.2f, 0.2f, 0.2f, 1.0f};
+        glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
+        glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
 
-            // Draw the appropriate shape with texture
+        if (proj.state == ProjectileRenderData::ACTIVE) {
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
+            // Do NOT use glColor3f() here for textured objects
+
             switch (proj.type) {
             case ProjectileRenderData::CONE:
                 drawCone(); break;
@@ -791,10 +713,165 @@ void GameWidget::drawProjectiles()
             case ProjectileRenderData::PYRAMID:
                 drawPyramid(); break;
             }
+            glDisable(GL_TEXTURE_2D);
         }
         else if (proj.state == ProjectileRenderData::SPLIT) {
-            // Split object rendering code (existing)
-            // ...existing code...
+            float splitTime = m_elapsedTime - proj.spawnTime - 0.1f;
+
+            glDisable(GL_LIGHTING);
+            glColor3f(1.0f, 1.0f, 0.0f); // Only for POP effect (not textured)
+            glPointSize(5.0f);
+            glBegin(GL_POINTS);
+            for (int i = 0; i < 20; i++) {
+                float angle = i * 18.0f;
+                float radius = 0.2f + splitTime * 0.7f;
+                float x = radius * cos(angle);
+                float y = radius * sin(angle);
+                glVertex3f(x, y, 0);
+            }
+            glEnd();
+
+            // For split halves, set material and avoid glColor3f() before textured draw
+            switch (proj.type) {
+            case ProjectileRenderData::CYLINDER: {
+                float offset = 0.3f + splitTime * 0.2f;
+                float fall = splitTime * 0.2f;
+                float rot = splitTime * 60.0f;
+
+                glEnable(GL_LIGHTING);
+                glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
+                glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
+
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
+                glPushMatrix();
+                glTranslatef(-offset, -fall, 0);
+                glRotatef(rot, 0, 1, 0);
+                drawCylinder();
+                glPopMatrix();
+                glDisable(GL_TEXTURE_2D);
+
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
+                glPushMatrix();
+                glTranslatef(offset, -fall, 0);
+                glRotatef(-rot, 0, 1, 0);
+                drawCylinder();
+                glPopMatrix();
+                glDisable(GL_TEXTURE_2D);
+                break;
+            }
+            case ProjectileRenderData::CONE: {
+                float offset = 0.4f + splitTime * 0.15f;
+                float fall = splitTime * 0.15f;
+                float rot = splitTime * 50.0f;
+
+                glEnable(GL_LIGHTING);
+                glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
+                glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
+
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
+                glPushMatrix();
+                glTranslatef(-offset, -fall, 0);
+                glRotatef(rot, 0, 1, 0);
+                drawCone();
+                glPopMatrix();
+                glDisable(GL_TEXTURE_2D);
+
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
+                glPushMatrix();
+                glTranslatef(offset, -fall, 0);
+                glRotatef(-rot, 0, 1, 0);
+                drawCone();
+                glPopMatrix();
+                glDisable(GL_TEXTURE_2D);
+                break;
+            }
+            case ProjectileRenderData::CUBE: {
+                float offset = 0.6f + splitTime * 0.15f;
+                float fall = splitTime * 0.15f;
+                float rot = splitTime * 45.0f;
+
+                glEnable(GL_LIGHTING);
+                glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
+                glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
+
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
+                glPushMatrix();
+                glTranslatef(-offset, -fall, 0);
+                glRotatef(rot, 0, 1, 0);
+                drawCube();
+                glPopMatrix();
+                glDisable(GL_TEXTURE_2D);
+
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
+                glPushMatrix();
+                glTranslatef(offset, -fall, 0);
+                glRotatef(-rot, 0, 1, 0);
+                drawCube();
+                glPopMatrix();
+                glDisable(GL_TEXTURE_2D);
+                break;
+            }
+            case ProjectileRenderData::PYRAMID: {
+                float offset = 0.6f + splitTime * 0.2f;
+                float fall = splitTime * 0.2f;
+                float rot = splitTime * 50.0f;
+
+                glEnable(GL_LIGHTING);
+                glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
+                glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
+
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
+                glPushMatrix();
+                glTranslatef(-offset, -fall, 0.0f);
+                glRotatef(rot, 0, 0, 1);
+                glScalef(0.5f, 1.0f, 1.0f);
+                drawPyramid();
+                glPopMatrix();
+                glDisable(GL_TEXTURE_2D);
+
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
+                glPushMatrix();
+                glTranslatef(offset, -fall, 0.0f);
+                glRotatef(-rot, 0, 0, 1);
+                glScalef(0.5f, 1.0f, 1.0f);
+                drawPyramid();
+                glPopMatrix();
+                glDisable(GL_TEXTURE_2D);
+                break;
+            }
+            default:
+                // ⏩ Old default split for sphere
+                glColor3f(0.0f, 0.9f, 0.2f);
+
+                glPushMatrix();
+                glTranslatef(-0.3f - splitTime * 0.7f, -splitTime * 1.0f, 0);
+                glRotatef(splitTime * 240.0f, 0, 0, 1);
+                GLUquadric* quad1 = gluNewQuadric();
+                gluQuadricNormals(quad1, GLU_SMOOTH);
+                gluSphere(quad1, 0.4f, 16, 8);
+                gluDeleteQuadric(quad1);
+                glPopMatrix();
+
+                glPushMatrix();
+                glTranslatef(0.3f + splitTime * 0.7f, -splitTime * 1.0f, 0);
+                glRotatef(-splitTime * 240.0f, 0, 0, 1);
+                GLUquadric* quad2 = gluNewQuadric();
+                gluQuadricNormals(quad2, GLU_SMOOTH);
+                gluSphere(quad2, 0.4f, 16, 8);
+                gluDeleteQuadric(quad2);
+                glPopMatrix();
+                break;
+            }
+
+            glEnable(GL_LIGHTING);
         }
 
         glPopMatrix();
@@ -1039,11 +1116,11 @@ void GameWidget::checkHitZoneCollisions()
 
 float GameWidget::getProjectileCollisionRadius(ProjectileRenderData::Type type) const {
     switch (type) {
-    case ProjectileRenderData::CYLINDER: return 1.0f;  // length is 2
-    case ProjectileRenderData::CONE:     return 0.7f;  // height = 2, base = 0.6
-    case ProjectileRenderData::CUBE:     return 1.3f;  // side = 2
-    case ProjectileRenderData::PYRAMID:  return 1.2f;  // base 2, height 1.6
-    default:                             return 0.6f;
+        case ProjectileRenderData::Type::CYLINDER: return 1.0f;  // length is 2
+        case ProjectileRenderData::Type::CONE:     return 0.7f;  // height = 2, base = 0.6
+        case ProjectileRenderData::Type::PYRAMID:  return 1.2f;  // base 2, height 1.6
+        // Add cases for other types
+        default: return 0.5f;
     }
 }
 
@@ -1090,3 +1167,109 @@ float distanceBetweenSegments(
 
     return (c1 - c2).length();
 }
+
+void GameWidget::loadTextures()
+{
+    // Generate texture IDs
+    glGenTextures(4, m_textures);
+    
+    // Load cube texture (index 0)
+    QImage cubeImg(":/textures/textures/cube.png");
+    if (cubeImg.isNull()) {
+        qDebug() << "Failed to load cube texture";
+        cubeImg = QImage(1, 1, QImage::Format_RGBA8888);
+        cubeImg.fill(Qt::red);
+    }
+    cubeImg = cubeImg.convertToFormat(QImage::Format_RGBA8888);
+    
+    glBindTexture(GL_TEXTURE_2D, m_textures[0]);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, cubeImg.width(), cubeImg.height(), 
+                0, GL_RGBA, GL_UNSIGNED_BYTE, cubeImg.bits());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
+    // Load pyramid texture (index 1)
+    QImage pyramidImg(":/textures/textures/pyramid.jpg");
+    if (pyramidImg.isNull()) {
+        qDebug() << "Failed to load pyramid texture";
+        pyramidImg = QImage(1, 1, QImage::Format_RGBA8888);
+        pyramidImg.fill(Qt::green);
+    }
+    pyramidImg = pyramidImg.convertToFormat(QImage::Format_RGBA8888);
+    
+    glBindTexture(GL_TEXTURE_2D, m_textures[1]);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pyramidImg.width(), pyramidImg.height(),
+                0, GL_RGBA, GL_UNSIGNED_BYTE, pyramidImg.bits());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
+    // Load cylinder (carrot) texture (index 2)
+    QImage carrotImg(":/textures/textures/carrot.jpg");
+    if (carrotImg.isNull()) {
+        qDebug() << "Failed to load carrot texture";
+        carrotImg = QImage(1, 1, QImage::Format_RGBA8888);
+        carrotImg.fill(Qt::blue);
+    }
+    carrotImg = carrotImg.convertToFormat(QImage::Format_RGBA8888);
+    
+    glBindTexture(GL_TEXTURE_2D, m_textures[2]);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, carrotImg.width(), carrotImg.height(),
+                0, GL_RGBA, GL_UNSIGNED_BYTE, carrotImg.bits());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
+    // Load cone texture (index 3)
+    QImage coneImg(":/textures/textures/cone.jpg");
+    if (coneImg.isNull()) {
+        qDebug() << "Failed to load cone texture";
+        coneImg = QImage(1, 1, QImage::Format_RGBA8888);
+        coneImg.fill(Qt::yellow);
+    }
+    coneImg = coneImg.convertToFormat(QImage::Format_RGBA8888);
+    
+    glBindTexture(GL_TEXTURE_2D, m_textures[3]);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, coneImg.width(), coneImg.height(),
+                0, GL_RGBA, GL_UNSIGNED_BYTE, coneImg.bits());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
+    // Unbind texture when done
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    qDebug() << "Textures loaded successfully";
+}
+
+// Make sure your random projectile generation includes all types
+void GameWidget::createRandomProjectile() {
+    // Debug output to check type distribution
+    int randomType = QRandomGenerator::global()->bounded(4);
+    Projectile::Type type;
+    
+    switch (randomType) {
+        case 0: 
+            type = Projectile::CONE; 
+            qDebug() << "Creating CONE";
+            break;
+        case 1: 
+            type = Projectile::CYLINDER; 
+            qDebug() << "Creating CYLINDER";
+            break;
+        case 2: 
+            type = Projectile::CUBE; 
+            qDebug() << "Creating CUBE";
+            break;
+        case 3: 
+            type = Projectile::PYRAMID; 
+            qDebug() << "Creating PYRAMID";
+            break;
+        default: 
+            type = Projectile::CONE;
+            qDebug() << "Default to CONE";
+    }
+    
+    // Create projectile with the determined type
+    Projectile projectile(type); // Pass type to constructor instead of using setType
+    projectile.setPosition(QVector3D(0.0f, 1.0f, 5.0f)); // Start position    
+    launchProjectile(projectile);
+}
+
