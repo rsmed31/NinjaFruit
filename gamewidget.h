@@ -10,6 +10,7 @@
 #include <QVector3D>
 #include <QTimer>
 #include <QList>
+#include <QMap>  // Add this for texture map
 
 // Forward declaration - class should be forward declared but not used directly
 class Projectile;
@@ -52,7 +53,7 @@ private slots:
 private:
     // Hand position
     QVector3D m_handPosition;
-    
+
     // Projectiles
     struct ProjectileRenderData {
         QVector3D position;
@@ -124,6 +125,10 @@ private:
 
     float getProjectileCollisionRadius(ProjectileRenderData::Type type) const;
 
+    // Texture handling
+    QMap<ProjectileRenderData::Type, GLuint> m_textures;
+    void loadTextures();
+    bool bindTextureForType(ProjectileRenderData::Type type);
 };
 
 #endif // GAMEWIDGET_H
