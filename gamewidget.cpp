@@ -410,13 +410,11 @@ void GameWidget::drawVirtualHand()
     float angle = m_handPosition.x() * (M_PI / 2.0f); // from -90° to +90°
     float radius = 6.0f; // ✅ match cylinder radius
     float x = m_handPosition.x();  // Already normalized in [-7.5, 7.5]
-    float z = 2.0f;  // Bring sword up onto the cylinder mesh
+    float z = -3.0f;  // Bring sword up onto the cylinder mesh
     float y = m_handPosition.y() * 0.6f;  // 🔺 broader vertical sweep
     
-    // Position sword closer to camera for better first-person feel
-    // Move z value closer to camera (from 0.75f to 3.0f)
-    glTranslatef(x, y + 0.8f, z); // Adjust z-plane
-
+    // Position sword on the grid plane and at the cylinder's z position
+    glTranslatef(x, y + 0.8f, z); // Updated to z=2.0f to align with cylinder
     
     // Calculate and emit sword endpoints for collision detection
     QVector3D handlePos, tipPos;
@@ -426,16 +424,16 @@ void GameWidget::drawVirtualHand()
     glRotatef(15.0f, 0.0f, 0.0f, 1.0f);  // Less tilt on Z axis
     glRotatef(-20.0f, 0.0f, 1.0f, 0.0f); // Less rotation on Y axis
     
-    // Increase scale for bigger sword appearance
-    float swordScale = 0.08f;  // Make the blade a bit smaller
+    // Scale sword to be visible on grid
+    float swordScale = 0.15f;  // Larger scale for visibility
     glScalef(swordScale, swordScale, swordScale);
 
     
     glDisable(GL_LIGHTING);
     
-    // Draw sword with more detailed appearance
+    // Draw sword with bright colors for visibility
     // Handle
-    glColor3f(0.45f, 0.3f, 0.15f);  // Dark brown
+    glColor3f(0.8f, 0.6f, 0.4f);  // Brighter brown
     glBegin(GL_QUADS);
         glVertex3f(-0.8f, -8.0f, 0.0f);
         glVertex3f( 0.8f, -8.0f, 0.0f);
