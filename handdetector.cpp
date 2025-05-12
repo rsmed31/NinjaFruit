@@ -30,11 +30,44 @@ cv::Point HandDetector::detectHand(const cv::Mat &frame)
     m_frameCounter++;
     m_contourFrameCounter++;
     
-    //======== STEP 1: Downscale input frame to 50% (less aggressive downscale) ========
+    // OPTIMIZATION: Check if there's significant movement before processing
+    // If we have a previous hand position and there's no movement, return the previous position
+    if (!m_isFirstFrame && m_prevHandPos.x >= 0) {
+        if (!m_prevFrame.empty() && frame.size() == m_prevFrame.size()) {
+            // Quick check for significant movement - compare just a few pixels
+            // This is much faster than full frame differencing
+            int diffCount = 0;
+            int checkPoints = 10; // Check 10 sample points
+            
+            for (int i = 0; i < checkPoints; i++) {
+                int x = rand() % frame.cols;
+                int y = rand() % frame.rows;
+                
+                cv::Vec3b current = frame.at<cv::Vec3b>(y, x);
+                cv::Vec3b prev = m_prevFrame.at<cv::Vec3b>(y, x);
+                
+                // Calculate color difference
+                int diff = std::abs(current[0] - prev[0]) + 
+                           std::abs(current[1] - prev[1]) + 
+                           std::abs(current[2] - prev[2]);
+                
+                if (diff > 30) { // Threshold for significant color change
+                    diffCount++;
+                }
+            }
+            
+            // If less than 30% of sample points show movement, skip processing
+            if (diffCount < checkPoints * 0.3) {
+                return m_prevHandPos;
+            }
+        }
+    }
+    
+    //======== STEP 1: Downscale input frame to 20% (even more aggressive downscale) ========
     cv::Mat smallFrame;
-    const float scaleFactor = 0.5f; // 50% size: smoother, still performant
-    cv::resize(frame, smallFrame, cv::Size(), scaleFactor, scaleFactor);
-
+    const float scaleFactor = 0.2f; // Reduce to just 20% of original size
+    cv::resize(frame, smallFrame, cv::Size(), scaleFactor, scaleFactor, cv::INTER_LINEAR);
+    
     //======== STEP 2: FLANN matching against calibration images ========
     // Use motion-based ROI for faster processing
     cv::Rect motionROI = detectMotionROI(smallFrame);

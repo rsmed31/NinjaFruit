@@ -94,11 +94,7 @@ private:
     
     // Hand visualization for game screen
     QLabel* handVisualizationLabel;
-
-    // Last known hand positions
-    float lastX = 0.0f;  // Initialize to 0
-    float lastY = 0.0f;  // Initialize to 0
-
+    
     // Methods
     void setupUI();
     void setupConnections();

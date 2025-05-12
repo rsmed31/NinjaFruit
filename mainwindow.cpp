@@ -342,9 +342,6 @@ void MainWindow::processFrame()
         return;
     }
     
-    // Mirror-flip so camera edges map directly to game edges
-    cv::flip(frame, frame, /*flipCode=*/1);
-    
     // Don't resize the frame - work with the smaller original size
     // Just make a shallow copy for tracking purposes
     frame.copyTo(currentFrame);
@@ -380,12 +377,9 @@ void MainWindow::processFrame()
         cv::Mat displayFrame = currentFrame.clone();
         
         if (handDetected) {
-            gameEngine->updateHandPosition(QVector3D(gameX, gameY, 0.75f));
-            gameWidget->setHandPosition(gameX, gameY);
-        } else {
-            gameWidget->setHandPosition(-999.0f, -999.0f);  // triggers fallback in GameWidget
+            // Draw hand position indicator
+            cv::circle(displayFrame, handPos, 10, cv::Scalar(0,255,0), -1);
         }
-
         
         // Convert frame to QImage with RGB conversion in one step
         cv::Mat rgbFrame;
@@ -463,26 +457,33 @@ void MainWindow::updateHandVisualization(QLabel* label, float x, float y, bool d
 
 void MainWindow::mapHandToGameSpace(const cv::Point& handPos, float& gameX, float& gameY)
 {
-    // Normalize
-    float normX = handPos.x / static_cast<float>(currentFrame.cols);
-    float normY = handPos.y / static_cast<float>(currentFrame.rows);
+    // Normalize camera coordinates (0.0 to 1.0)
+    float normX = static_cast<float>(handPos.x) / currentFrame.cols;
+    float normY = static_cast<float>(handPos.y) / currentFrame.rows;
     
-    // Linear mapping: normX=0→-8, normX=1→+8
-    gameX = (normX - 0.5f) * 16.0f;
+    // Map X coordinates from camera to game space with mirroring
+    // This creates a more intuitive left-to-right hand mapping
+    gameX = (0.5f - normX) * 16.0f;
     
-    // Invert Y so camera/top corresponds to game/top
-    gameY = (1.0f - normY) * 10.0f;
+    // Map Y coordinates from camera to game space
+    // The value is inverted since higher Y in camera = lower position in real world
+    gameY = (1.0f - normY) * 10.0f; 
     
-    // Less laggy smoothing
-    gameX = 0.6f * gameX + 0.4f * lastX;
-    gameY = 0.6f * gameY + 0.4f * lastY;
+    // Apply stronger smoothing to reduce jitter
+    static float lastX = gameX;
+    static float lastY = gameY;
     
-    lastX = gameX;  
+    // Apply temporal smoothing for more stable hand position
+    gameX = 0.8f * gameX + 0.2f * lastX;
+    gameY = 0.8f * gameY + 0.2f * lastY;
+    
+    // Store current position for next smoothing
+    lastX = gameX;
     lastY = gameY;
     
-    // Full extents of gameplay area
-    gameX = qBound(-8.0f, gameX, 8.0f);
-    gameY = qBound(0.0f, gameY, 10.0f);
+    // Apply bounds to prevent the sword from going off-screen
+    gameX = qBound(-7.5f, gameX, 7.5f);
+    gameY = qBound(0.5f, gameY, 9.5f);
 }
 
 void MainWindow::updateScore(int score)
