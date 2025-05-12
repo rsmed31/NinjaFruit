@@ -112,7 +112,8 @@ private:
     QOpenGLVertexArrayObject m_vao;
     QOpenGLBuffer m_vertexBuffer;
     QOpenGLBuffer m_indexBuffer;
-    
+    QVector3D m_lastValidHandPosition;
+
     // Draw the hit cylinder
     void drawHitCylinder();
     

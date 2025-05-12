@@ -139,41 +139,46 @@ void GameEngine::spawnProjectile()
 
 void GameEngine::checkCollisions()
 {
-    // Define hit zone dimensions matching the visual representation
-    const float HIT_MIN_X = -8.0f;
-    const float HIT_MAX_X = 8.0f;
-    const float HIT_MIN_Z = 0.0f;
-    const float HIT_MAX_Z = 1.5f;
-    
+    // Define your sword‐plane and full game‐height
+    const float sliceZ      = 2.0f;    // Must match GameWidget’s z
+    const float zTolerance  = 0.3f;    // Allow for blade tilt (~2.0±0.3)
+    const float minZ        = sliceZ - zTolerance;
+    const float maxZ        = sliceZ + zTolerance;
+    const float minY        = 0.0f;    // Bottom of play area
+    const float maxY        = 10.0f;   // Top of play area
+
     for (int i = 0; i < m_projectiles.size(); i++) {
         Projectile& projectile = m_projectiles[i];
         if (projectile.getState() != Projectile::ACTIVE)
             continue;
-        
+
         QVector3D pos = projectile.getPosition();
-        
-        // Check if projectile is within hit zone boundaries (semi-cylindrical area)
-        bool inHitZone = (pos.x() >= HIT_MIN_X && pos.x() <= HIT_MAX_X && 
-                          pos.z() >= HIT_MIN_Z && pos.z() <= HIT_MAX_Z &&
-                          pos.y() >= 0.1f && pos.y() <= 5.0f);
-        
-        // Use line segment collision detection with the actual sword geometry
-        if (inHitZone && projectile.isColliding(m_swordHandle, m_swordTip)) {
-            qDebug() << "Collision detected with projectile" << i 
-                     << "at position" << pos 
-                     << "sword:" << m_swordHandle << "->" << m_swordTip;
-            
-            // Mark projectile as sliced
-            projectile.split();
-            projectile.markAsSliced();
-            
-            // Update score by adding projectile's point value
-            int points = projectile.getPointValue();
-            m_score += points;
-            qDebug() << "Adding" << points << "points, new score:" << m_score;
-            
-            emit scoreChanged(m_score);
-            emit projectileSplit(i);
+
+        // Check if projectile is within hit zone boundaries
+        bool inHitZone = (
+            pos.z() >= minZ && pos.z() <= maxZ &&
+            pos.y() >= minY && pos.y() <= maxY
+        );
+
+        if (inHitZone) {
+            // Use line segment collision detection with the actual sword geometry
+            if (projectile.isColliding(m_swordHandle, m_swordTip)) {
+                qDebug() << "Collision detected with projectile" << i 
+                         << "at position" << pos 
+                         << "sword:" << m_swordHandle << "->" << m_swordTip;
+                
+                // Mark projectile as sliced
+                projectile.split();
+                projectile.markAsSliced();
+                
+                // Update score by adding projectile's point value
+                int points = projectile.getPointValue();
+                m_score += points;
+                qDebug() << "Adding" << points << "points, new score:" << m_score;
+                
+                emit scoreChanged(m_score);
+                emit projectileSplit(i);
+            }
         }
     }
 }
