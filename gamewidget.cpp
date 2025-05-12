@@ -10,9 +10,15 @@ extern "C" {
 
 // Vertex data for drawing primitives
 static const GLfloat cylinderVertices[] = {
+    // Basic cylinder vertices would go here
+    // For brevity, only part of the data is shown
+    // In a real implementation, you would generate vertices
+    // programmatically with proper normals and texture coordinates
 };
 
 static const GLuint cylinderIndices[] = {
+    // Triangle indices for the cylinder
+    // Would be generated programmatically
 };
 
 GameWidget::GameWidget(QWidget *parent)
@@ -60,6 +66,7 @@ void GameWidget::setHandPosition(float x, float y)
     }
     update();
 }
+
 
 void GameWidget::initializeGL()
 {
@@ -169,6 +176,7 @@ void GameWidget::updateScene()
     // Request a redraw
     update();
 }
+
 
 // Fix the function implementation
 ProjectileRenderData::Type GameWidget::mapProjectileType(Projectile::Type type) {
@@ -498,6 +506,7 @@ void GameWidget::drawVirtualHand()
     glPopMatrix();
 }
 
+
 void GameWidget::drawCone() {
     // Enable texturing
     glEnable(GL_TEXTURE_2D);
@@ -521,6 +530,8 @@ void GameWidget::drawCone() {
     gluDeleteQuadric(quad);
     glDisable(GL_TEXTURE_2D);
 }
+
+
 
 void GameWidget::drawCylinder() {
     // Enable texturing
@@ -1047,8 +1058,6 @@ void GameWidget::checkHitZoneCollisions()
     }
 }
 
-
-
 float GameWidget::getProjectileCollisionRadius(ProjectileRenderData::Type type) const {
     switch (type) {
         case ProjectileRenderData::Type::CYLINDER: return 1.0f;  // length is 2
@@ -1207,4 +1216,5 @@ void GameWidget::createRandomProjectile() {
     projectile.setPosition(QVector3D(0.0f, 1.0f, 5.0f)); // Start position    
     launchProjectile(projectile);
 }
+
 

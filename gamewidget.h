@@ -95,6 +95,7 @@ private slots:
 private:
     // Hand position
     QVector3D m_handPosition;
+    QVector3D m_lastValidHandPosition;  // Store the last valid hand position
 
     // Projectiles
     QList<ProjectileRenderData> m_projectiles;

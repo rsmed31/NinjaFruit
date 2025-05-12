@@ -92,6 +92,9 @@ void CalibrationWidget::updateFrame()
     if (m_camera.isOpened()) {
         m_camera >> m_frame;
         if (!m_frame.empty()) {
+            // Flip the frame horizontally to correct the reversed camera feed
+            cv::flip(m_frame, m_frame, 1);
+
             m_qImage = matToQImage(m_frame);
             update(); // Trigger repaint
         }

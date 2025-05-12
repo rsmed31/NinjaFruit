@@ -13,6 +13,8 @@ MainWindow::MainWindow(QWidget *parent)
     , gameEngine(new GameEngine(this))
     , handPosWidget(nullptr)
     , multiPositionCheck(nullptr)  // Initialize the checkbox pointer
+    , lastX(0.0f)  // Initialize lastX
+    , lastY(0.0f)  // Initialize lastY
 {
     // Now set up UI that uses handDetector
     setupUI();
@@ -338,6 +340,9 @@ void MainWindow::processFrame()
         return;
     }
     
+    // Flip the frame horizontally to correct the reversed camera feed
+    cv::flip(frame, frame, 1);
+    
     if (frame.empty()) {
         return;
     }
@@ -478,6 +483,7 @@ void MainWindow::mapHandToGameSpace(const cv::Point& handPos, float& gameX, floa
     gameX = qBound(-8.0f, gameX, 8.0f);
     gameY = qBound(0.0f, gameY, 10.0f);
 }
+
 
 void MainWindow::updateScore(int score)
 {

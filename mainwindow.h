@@ -94,6 +94,10 @@ private:
     
     // Hand visualization for game screen
     QLabel* handVisualizationLabel;
+
+    // Smoothing variables
+    float lastX;  // Last valid X position for smoothing
+    float lastY;  // Last valid Y position for smoothing
     
     // Methods
     void setupUI();

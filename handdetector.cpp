@@ -560,3 +560,4 @@ std::vector<cv::Vec4i> HandDetector::getConvexityDefects() const
 {
     return m_defects;
 }
+

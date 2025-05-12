@@ -183,6 +183,7 @@ void GameEngine::checkCollisions()
     }
 }
 
+
 void GameEngine::updateProjectiles(float deltaTime)
 {
     // Create temporary list of projectiles to remove
@@ -317,6 +318,8 @@ QVector3D GameEngine::generateRandomVelocity()
 
 void GameEngine::handleMissedProjectiles()
 {
+    // This function is now empty since we handle missed projectiles
+    // in updateProjectiles() to avoid duplicate processing
 }
 
 void GameEngine::connectToGameWidget(GameWidget* widget)
@@ -342,4 +345,5 @@ void GameEngine::addScore(int points)
     qDebug() << "Adding" << points << "points, new score:" << m_score;
     emit scoreChanged(m_score);
 }
+
 
