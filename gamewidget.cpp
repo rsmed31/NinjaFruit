@@ -34,7 +34,7 @@ GameWidget::GameWidget(QWidget *parent)
 {
     // Set focus policy to accept keyboard input
     setFocusPolicy(Qt::StrongFocus);
-    
+
     // Initialize timer for animation
     m_animationTimer = new QTimer(this);
     connect(m_animationTimer, &QTimer::timeout, this, &GameWidget::updateScene);
@@ -45,13 +45,13 @@ GameWidget::~GameWidget()
 {
     // Make sure the context is current when deleting resources
     makeCurrent();
-    
+
     delete m_program;
-    
+
     m_vertexBuffer.destroy();
     m_indexBuffer.destroy();
     m_vao.destroy();
-    
+
     doneCurrent();
 }
 
@@ -76,27 +76,27 @@ void GameWidget::initializeGL()
     glClearColor(0.05f, 0.05f, 0.1f, 1.0f); // Darker background
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
-    
+
     // Enable lighting for better 3D appearance
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
     glEnable(GL_COLOR_MATERIAL);
-    
+
     // Setup materials
     GLfloat ambient[] = {0.2f, 0.2f, 0.2f, 1.0f};
     GLfloat diffuse[] = {0.8f, 0.8f, 0.8f, 1.0f};
     GLfloat specular[] = {1.0f, 1.0f, 1.0f, 1.0f};
     GLfloat position[] = {0.0f, 10.0f, 0.0f, 1.0f};
-    
+
     glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
     glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
     glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
     glLightfv(GL_LIGHT0, GL_POSITION, position);
-    
+
     // Create shaders and geometry
     createShaders();
     createGeometry();
-    
+
     // Set up view matrix - position camera for a front view
     m_viewMatrix.setToIdentity();
     m_viewMatrix.lookAt(
@@ -110,13 +110,13 @@ void GameWidget::initializeGL()
 void GameWidget::paintGL()
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    
+
     // 1. Set up field of view
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     // Use 95 degree FOV for wider view to see incoming objects better
     gluPerspective(95.0, width() / static_cast<float>(height()), 0.1, 100.0);
-    
+
     // 2. Move camera for better first-person view
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
@@ -125,16 +125,16 @@ void GameWidget::paintGL()
         0.0, 1.0, -30.0,    // Look further down the z-axis for better depth
         0.0, 1.0, 10.0       // Up vector
     );
-    
+
     // 3. Lighting setup
     glEnable(GL_LIGHTING);
     GLfloat light_position[] = {0.0f, 5.0f, 5.0f, 1.0f};  // Move light closer to camera
     glLightfv(GL_LIGHT0, GL_POSITION, light_position);
-    
+
     // 4. Draw game elements
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
+
     drawDistanceIndicators();
     drawHitCylinder();       // Draw proper 3D hit zone cylinder
     drawProjectiles();
@@ -153,13 +153,13 @@ void GameWidget::updateScene()
 {
     // Track elapsed time
     m_elapsedTime += 0.016f; // ~16ms per frame at 60 FPS
-    
+
     // Check for sword-projectile collisions
     checkHitZoneCollisions();
-    
+
     // Update projectile positions based on physics
     updateProjectilePositions();
-    
+
     // Request a redraw
     update();
 }
@@ -168,39 +168,41 @@ void GameWidget::launchProjectile(const QVector3D& position, const QVector3D& ve
 {
     ProjectileRenderData projectile;
     projectile.position = position;
-    
+
     // Modify velocity to ensure projectiles head toward the screen
     // Start with the provided velocity but adjust it to target the hit zone
     QVector3D adjustedVelocity = velocity;
-    
+
     // Push projectile forward toward the player with a minimum z-velocity
     if (adjustedVelocity.z() > -5.0f) {
-        adjustedVelocity.setZ(-5.0f - (QRandomGenerator::global()->bounded(5)));  // Ensure strong forward momentum
+        adjustedVelocity.setZ(-5.0f - (QRandomGenerator::global()->bounded(5)));
     }
-    
+
+
+
     // Reduce extreme lateral movements
     if (qAbs(adjustedVelocity.x()) > 8.0f) {
         adjustedVelocity.setX(adjustedVelocity.x() > 0 ? 8.0f : -8.0f);
     }
-    
+
     // Ensure upward launch to give time to hit them
     if (adjustedVelocity.y() < 2.0f) {
         adjustedVelocity.setY(2.0f + (QRandomGenerator::global()->bounded(4)));
     }
-    
+
     projectile.velocity = adjustedVelocity;
     projectile.spawnTime = m_elapsedTime;
     projectile.active = true;
     projectile.state = ProjectileRenderData::ACTIVE;
-    
+
     // Set random projectile type among the 4 required types
     int typeValue = QRandomGenerator::global()->bounded(4); // 0 to 3
     projectile.type = static_cast<ProjectileRenderData::Type>(typeValue);
 
-    
+
     // Verify the projectile will actually reach the screen
     configureProjectileTrajectory(projectile);
-    
+
     m_projectiles.append(projectile);
 }
 
@@ -223,32 +225,32 @@ void GameWidget::drawDistanceIndicators()
 {
     // Disable lighting for the ground plane
     glDisable(GL_LIGHTING);
-    
+
     // Draw a ground plane with fading colors to indicate distance
     glBegin(GL_QUADS);
-    
+
     // Near zone - red (danger zone)
     glColor4f(0.7f, 0.0f, 0.0f, 0.3f);
     glVertex3f(-20.0f, 0.0f, 10.0f);
     glVertex3f(20.0f, 0.0f, 10.0f);
-    
+
     // Middle zone - yellow (warning zone)
     glColor4f(0.7f, 0.7f, 0.0f, 0.3f);
     glVertex3f(20.0f, 0.0f, 0.0f);
     glVertex3f(-20.0f, 0.0f, 0.0f);
     glEnd();
-    
+
     // Middle to far zone - green and blue gradient
     glBegin(GL_QUADS);
     glColor4f(0.0f, 0.7f, 0.0f, 0.3f);
     glVertex3f(-20.0f, 0.0f, 0.0f);
     glVertex3f(20.0f, 0.0f, 0.0f);
-    
+
     glColor4f(0.0f, 0.0f, 0.7f, 0.3f);
     glVertex3f(20.0f, 0.0f, -20.0f);
     glVertex3f(-20.0f, 0.0f, -20.0f);
     glEnd();
-    
+
     // Add distance marker rings
     glColor4f(1.0f, 1.0f, 1.0f, 0.5f);
     for (int z = -15; z <= 10; z += 5) {
@@ -260,18 +262,18 @@ void GameWidget::drawDistanceIndicators()
             glVertex3f(x, y, z);
         }
         glEnd();
-        
+
         // Draw distance text if needed
-        // This would require more complex text rendering which 
+        // This would require more complex text rendering which
         // is omitted for simplicity
     }
-    
+
     // After drawing the ground plane and marker rings, add hit region overlay:
     // Move the hit region closer to the player to match the collision detection zone
     glDisable(GL_LIGHTING);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
+
     // Draw the hit zone closer to the camera (between 0.0f and 1.5f)
     // with a more visible color and border
     glColor4f(0.2f, 1.0f, 0.2f, 0.3f); // More saturated green
@@ -281,7 +283,7 @@ void GameWidget::drawDistanceIndicators()
       glVertex3f(8.0f, 0.001f, 1.5f);
       glVertex3f(-8.0f, 0.001f, 1.5f);
     glEnd();
-    
+
     // Draw a border around the hit zone
     glColor4f(1.0f, 1.0f, 1.0f, 0.8f); // Clear white border
     glLineWidth(2.0f);
@@ -292,7 +294,7 @@ void GameWidget::drawDistanceIndicators()
       glVertex3f(-8.0f, 0.005f, 1.5f);
     glEnd();
     glLineWidth(1.0f);
-    
+
     // Add a "HIT ZONE" text indicator (simulated with lines for simplicity)
     glColor4f(1.0f, 1.0f, 1.0f, 0.7f);
     glPushMatrix();
@@ -303,7 +305,7 @@ void GameWidget::drawDistanceIndicators()
       glVertex3f(2.0f, 0.0f, 0.0f);
     glEnd();
     glPopMatrix();
-    
+
     glDisable(GL_BLEND);
     glEnable(GL_LIGHTING);
 }
@@ -314,42 +316,42 @@ void GameWidget::drawHitCylinder()
     glDisable(GL_LIGHTING);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
+
     // Position the hit cylinder directly in front of the camera
     // This is the region where sword slicing is detected
     glPushMatrix();
-    
+
     // Move the cylinder to a position that makes sense for gameplay
     // Center at player's position, extending forward
     glTranslatef(0.0f, 1.0f, 3.0f);
-    
+
     // Parameters for the hit cylinder
     const float cylinderRadius = 4.0f;
     const float cylinderHeight = 3.0f;
     const int cylinderSegments = 20;
-    
+
     // Draw a semi-cylindrical hit zone (wireframe with transparency)
     glColor4f(0.3f, 0.8f, 1.0f, 0.25f);  // Light blue, mostly transparent
-    
+
     // Draw the curved surface of the semi-cylinder
     glBegin(GL_TRIANGLE_STRIP);
     for (int i = 0; i <= cylinderSegments; i++) {
         float angle = M_PI * (1.0f - (float)i / cylinderSegments);
         float x = cylinderRadius * cos(angle);
         float z = cylinderRadius * sin(angle);
-        
+
         // Bottom vertex
         glVertex3f(x, 0.0f, z);
         // Top vertex
         glVertex3f(x, cylinderHeight, z);
     }
     glEnd();
-    
-    // Draw wireframe overlay for better visibility
+
+    // Draw wireframe overlay for better visi   bility
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glColor4f(0.5f, 1.0f, 1.0f, 0.8f);  // Brighter blue, more opaque
     glLineWidth(1.5f);
-    
+
     // Draw curved surface wireframe
     glBegin(GL_LINE_STRIP);
     for (int i = 0; i <= cylinderSegments; i++) {
@@ -359,7 +361,7 @@ void GameWidget::drawHitCylinder()
         glVertex3f(x, 0.0f, z);
     }
     glEnd();
-    
+
     glBegin(GL_LINE_STRIP);
     for (int i = 0; i <= cylinderSegments; i++) {
         float angle = M_PI * (1.0f - (float)i / cylinderSegments);
@@ -368,19 +370,19 @@ void GameWidget::drawHitCylinder()
         glVertex3f(x, cylinderHeight, z);
     }
     glEnd();
-    
+
     // Draw vertical lines
     for (int i = 0; i <= cylinderSegments; i += 4) {
         float angle = M_PI * (1.0f - (float)i / cylinderSegments);
         float x = cylinderRadius * cos(angle);
         float z = cylinderRadius * sin(angle);
-        
+
         glBegin(GL_LINES);
         glVertex3f(x, 0.0f, z);
         glVertex3f(x, cylinderHeight, z);
         glEnd();
     }
-    
+
     // Add a "HIT ZONE" label using simple lines
     glColor4f(1.0f, 1.0f, 1.0f, 0.9f);
     glPushMatrix();
@@ -392,11 +394,11 @@ void GameWidget::drawHitCylinder()
     glVertex3f(1.0f, 0.0f, 0.0f);
     glEnd();
     glPopMatrix();
-    
+
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glLineWidth(1.0f);
     glPopMatrix();
-    
+
     glDisable(GL_BLEND);
     glEnable(GL_LIGHTING);
 }
@@ -407,37 +409,37 @@ void GameWidget::getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos)
     // Start with the hand position
     float handX = m_handPosition.x() * 0.25f;  // Match scale in drawVirtualHand
     float handY = m_handPosition.y() * 0.25f;
-    
+
     // Calculate handle position (base of sword) in world coordinates
     // Match the translation in drawVirtualHand
     handlePos = QVector3D(handX, handY + 0.5f, 3.0f);
-    
+
     // Rotation angles from drawVirtualHand (should match exactly)
     float rotZ = 15.0f * M_PI / 180.0f;  // 15° in radians
     float rotY = -20.0f * M_PI / 180.0f; // -20° in radians
-    
+
     // Sword length in world units (scaled from model units)
     float swordScale = 0.045f;  // Match the scale in drawVirtualHand
     float swordLength = 18.0f * swordScale; // blade length * scale factor
-    
+
     // Calculate the tip position by applying the rotations to a vector pointing upward
     QVector3D direction(0.0f, swordLength, 0.0f);
-    
+
     // Apply Z rotation
     float tempX = direction.x() * cos(rotZ) - direction.y() * sin(rotZ);
     float tempY = direction.x() * sin(rotZ) + direction.y() * cos(rotZ);
     direction.setX(tempX);
     direction.setY(tempY);
-    
+
     // Apply Y rotation
     tempX = direction.x() * cos(rotY) + direction.z() * sin(rotY);
     float tempZ = -direction.x() * sin(rotY) + direction.z() * cos(rotY);
     direction.setX(tempX);
     direction.setZ(tempZ);
-    
+
     // Calculate tip position by adding direction vector to handle position
     tipPos = handlePos + direction;
-    
+
     // This publishes the handle and tip positions for collision detection
     emit swordPositionUpdated(handlePos, tipPos);
 }
@@ -446,33 +448,33 @@ void GameWidget::getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos)
 void GameWidget::drawVirtualHand()
 {
     glPushMatrix();
-    
+
     // Map hand position with more responsive tracking
     float handX = m_handPosition.x() * 0.25f;  // Scale factor increased for better movement
     float handY = m_handPosition.y() * 0.25f;
-    
+
     // Position sword closer to camera for better first-person feel
     // Move z value closer to camera (from 0.75f to 3.0f)
     glTranslatef(
-        handX,           
+        handX,
         handY + 0.5f,    // Lower position to see more of the sword
         3.0f             // Much closer to camera for first-person feel
     );
-    
+
     // Calculate and emit sword endpoints for collision detection
     QVector3D handlePos, tipPos;
     getSwordEndpoints(handlePos, tipPos);
-    
+
     // Adjust rotation for more natural sword orientation
     glRotatef(15.0f, 0.0f, 0.0f, 1.0f);  // Less tilt on Z axis
     glRotatef(-20.0f, 0.0f, 1.0f, 0.0f); // Less rotation on Y axis
-    
+
     // Increase scale for bigger sword appearance
     float swordScale = 0.045f;  // Increased from 0.035f
     glScalef(swordScale, swordScale, swordScale);
-    
+
     glDisable(GL_LIGHTING);
-    
+
     // Draw sword with more detailed appearance
     // Handle
     glColor3f(0.45f, 0.3f, 0.15f);  // Dark brown
@@ -482,7 +484,7 @@ void GameWidget::drawVirtualHand()
         glVertex3f( 0.8f, -2.5f, 0.0f);
         glVertex3f(-0.8f, -2.5f, 0.0f);
     glEnd();
-    
+
     // Crossguard with metallic appearance
     glColor3f(0.9f, 0.8f, 0.3f);  // Brighter gold
     glBegin(GL_QUADS);
@@ -491,7 +493,7 @@ void GameWidget::drawVirtualHand()
         glVertex3f( 3.0f, -1.5f, 0.0f);
         glVertex3f(-3.0f, -1.5f, 0.0f);
     glEnd();
-    
+
     // Blade with metallic sheen
     glColor3f(0.95f, 0.95f, 1.0f);  // Bright silver color
     glBegin(GL_QUADS);
@@ -500,14 +502,14 @@ void GameWidget::drawVirtualHand()
         glVertex3f( 0.5f, 15.0f, 0.0f);
         glVertex3f(-0.5f, 15.0f, 0.0f);
     glEnd();
-    
+
     // Blade tip
     glBegin(GL_TRIANGLES);
         glVertex3f(-0.5f, 15.0f, 0.0f);
         glVertex3f( 0.5f, 15.0f, 0.0f);
         glVertex3f( 0.0f, 18.0f, 0.0f);
     glEnd();
-    
+
     // Blade edge highlight
     glColor3f(1.0f, 1.0f, 1.0f);
     glLineWidth(1.5f);
@@ -515,7 +517,7 @@ void GameWidget::drawVirtualHand()
         glVertex3f(0.0f, -2.0f, 0.01f);
         glVertex3f(0.0f, 18.0f, 0.01f);
     glEnd();
-    
+
     // Handle wrap details
     glColor3f(0.3f, 0.2f, 0.1f);
     for (int i = -7; i <= -3; i++) {
@@ -525,7 +527,7 @@ void GameWidget::drawVirtualHand()
             glVertex3f( 0.8f, y, 0.01f);
         glEnd();
     }
-    
+
     // Pommel
     glColor3f(0.9f, 0.8f, 0.3f);
     glBegin(GL_QUADS);
@@ -534,7 +536,7 @@ void GameWidget::drawVirtualHand()
         glVertex3f( 1.2f, -8.0f, 0.0f);
         glVertex3f(-1.2f, -8.0f, 0.0f);
     glEnd();
-    
+
     glLineWidth(1.0f);
     glEnable(GL_LIGHTING);
     glPopMatrix();
@@ -631,22 +633,22 @@ void GameWidget::drawProjectiles()
 {
     // Enable lighting for 3D projectiles
     glEnable(GL_LIGHTING);
-    
+
     for (const ProjectileRenderData& proj : m_projectiles) {
         if (!proj.active) continue;
-        
+
         // Calculate current position based on physics
         QVector3D currentPos = calculateProjectilePosition(proj, m_elapsedTime - proj.spawnTime);
-        
+
         glPushMatrix();
-        
+
         // Position the projectile in world space
         glTranslatef(currentPos.x(), currentPos.y(), currentPos.z());
-        
+
         // Make projectiles brighter and more visible
         GLfloat material_diffuse[] = {0.8f, 0.8f, 0.0f, 1.0f}; // Bright yellow
         glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-        
+
         // Active vs split states
         if (proj.state == ProjectileRenderData::ACTIVE) {
             glColor3f(0.0f, 0.8f, 0.2f); // Greenish
@@ -689,81 +691,92 @@ void GameWidget::drawProjectiles()
             case ProjectileRenderData::CYLINDER: {
                 glColor3f(0.8f, 0.2f, 0.2f); // Reddish for split parts
 
+                float offset = 0.3f + splitTime * 0.2f;
+                float fall = splitTime * 0.2f;
+                float rot = splitTime * 60.0f;
+
                 // First half
                 glPushMatrix();
-                glTranslatef(-0.3f - splitTime * 0.7f, -splitTime * 0.9f, 0);
-                glRotatef(splitTime * 180.0f, 0, 1, 0);
+                glTranslatef(-offset, -fall, 0);
+                glRotatef(rot, 0, 1, 0);
                 drawCylinder();
                 glPopMatrix();
 
                 // Second half
                 glPushMatrix();
-                glTranslatef(0.3f + splitTime * 0.7f, -splitTime * 0.9f, 0);
-                glRotatef(-splitTime * 180.0f, 0, 1, 0);
+                glTranslatef(offset, -fall, 0);
+                glRotatef(-rot, 0, 1, 0);
                 drawCylinder();
                 glPopMatrix();
                 break;
             }
+
             case ProjectileRenderData::CONE: {
                 glColor3f(0.9f, 0.5f, 0.2f); // Orangey slice
-                float baseOffset = 0.4f; // how much they slide apart
-                float fallOffset = splitTime * 0.8f;
 
-                // First half (left or front)
+                float offset = 0.4f + splitTime * 0.15f;
+                float fall = splitTime * 0.15f;
+                float rot = splitTime * 50.0f;
+
+                // First half (left)
                 glPushMatrix();
-                glTranslatef(-baseOffset - splitTime * 0.5f, -fallOffset, 0);
-                glRotatef(splitTime * 160.0f, 0, 1, 0); // rotate along Y
+                glTranslatef(-offset, -fall, 0);
+                glRotatef(rot, 0, 1, 0);
                 drawCone();
                 glPopMatrix();
 
-                // Second half (right or back)
+                // Second half (right)
                 glPushMatrix();
-                glTranslatef(baseOffset + splitTime * 0.5f, -fallOffset, 0);
-                glRotatef(-splitTime * 160.0f, 0, 1, 0);
+                glTranslatef(offset, -fall, 0);
+                glRotatef(-rot, 0, 1, 0);
                 drawCone();
                 glPopMatrix();
                 break;
             }
+
             case ProjectileRenderData::CUBE: {
                 glColor3f(0.2f, 0.6f, 1.0f); // Blue-ish cube slice
-                float baseOffset = 0.6f;
-                float fall = splitTime * 0.7f;
-                float rot = splitTime * 180.0f;
+
+                float offset = 0.6f + splitTime * 0.15f;
+                float fall = splitTime * 0.15f;
+                float rot = splitTime * 45.0f;
 
                 // Left half
                 glPushMatrix();
-                glTranslatef(-baseOffset - splitTime * 0.5f, -fall, 0);
+                glTranslatef(-offset, -fall, 0);
                 glRotatef(rot, 0, 1, 0);
                 drawCube();
                 glPopMatrix();
 
                 // Right half
                 glPushMatrix();
-                glTranslatef(baseOffset + splitTime * 0.5f, -fall, 0);
+                glTranslatef(offset, -fall, 0);
                 glRotatef(-rot, 0, 1, 0);
                 drawCube();
                 glPopMatrix();
                 break;
             }
+
             case ProjectileRenderData::PYRAMID: {
                 glColor3f(0.9f, 0.7f, 0.1f); // Yellowish
 
-                float offset = 0.6f + splitTime * 0.5f;
-                float fall = splitTime * 0.8f;
+                float offset = 0.6f + splitTime * 0.2f;
+                float fall = splitTime * 0.2f;
+                float rot = splitTime * 50.0f;
 
                 // Left half
                 glPushMatrix();
                 glTranslatef(-offset, -fall, 0.0f);
-                glRotatef(splitTime * 160.0f, 0, 0, 1);
-                glScalef(0.5f, 1.0f, 1.0f); // Compress X
+                glRotatef(rot, 0, 0, 1);
+                glScalef(0.5f, 1.0f, 1.0f); // Simulate slice
                 drawPyramid();
                 glPopMatrix();
 
                 // Right half
                 glPushMatrix();
                 glTranslatef(offset, -fall, 0.0f);
-                glRotatef(-splitTime * 160.0f, 0, 0, 1);
-                glScalef(0.5f, 1.0f, 1.0f); // Compress X
+                glRotatef(-rot, 0, 0, 1);
+                glScalef(0.5f, 1.0f, 1.0f); // Simulate slice
                 drawPyramid();
                 glPopMatrix();
                 break;
@@ -797,7 +810,7 @@ void GameWidget::drawProjectiles()
             glEnable(GL_LIGHTING); // reactivate lighting after split drawing
         }
 
-        
+
         glPopMatrix();
     }
 }
@@ -806,7 +819,7 @@ void GameWidget::createShaders()
 {
     // Create shader program
     m_program = new QOpenGLShaderProgram(this);
-    
+
     // Add vertex shader
     m_program->addShaderFromSourceCode(QOpenGLShader::Vertex,
         "attribute vec3 position;\n"
@@ -816,14 +829,14 @@ void GameWidget::createShaders()
         "void main() {\n"
         "    gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);\n"
         "}\n");
-    
+
     // Add fragment shader
     m_program->addShaderFromSourceCode(QOpenGLShader::Fragment,
         "uniform vec3 objectColor;\n"
         "void main() {\n"
         "    gl_FragColor = vec4(objectColor, 1.0);\n"
         "}\n");
-    
+
     // Link shader program
     if (!m_program->link()) {
         qDebug() << "Failed to link shader program:" << m_program->log();
@@ -838,7 +851,7 @@ void GameWidget::createGeometry()
     // For this minimal example, we're using immediate mode (glBegin/glEnd)
     // rather than creating proper vertex buffers
     // In a real application, you should use modern OpenGL with VBOs and VAOs
-    
+
     // Example of setting up vertex arrays
     // m_vao.create();
     // m_vao.bind();
@@ -862,11 +875,11 @@ void GameWidget::updateProjectilePositions()
     QMutableListIterator<ProjectileRenderData> i(m_projectiles);
     while (i.hasNext()) {
         ProjectileRenderData &proj = i.next();
-        
+
         float timeActive = m_elapsedTime - proj.spawnTime;
         // Avoid unused variable warning
         Q_UNUSED(calculateProjectilePosition(proj, timeActive));
-        
+
         // ❌ DO NOT deactivate or remove based on Z or active time.
         // ❌ Leave all projectiles active so that GameEngine can decide their fate.
     }
@@ -886,42 +899,42 @@ void GameWidget::configureProjectileTrajectory(ProjectileRenderData& projectile)
     // Calculate if projectile will reach hit zone (z between 0 and 5)
     // Using projectile motion equations
     bool willHitZone = false;
-    
+
     // Solve for time when z coordinate will be in hit zone range
     // z = z₀ + v₀t + 0.5at²
     // For z axis, we have: z = z₀ + v_z*t (no gravity in z direction)
-    
+
     // Time to reach back of hit zone (z = 0)
     if (projectile.velocity.z() < 0) {  // Only if moving toward screen
         float timeToBackOfZone = (0.0f - projectile.position.z()) / projectile.velocity.z();
         // Calculate front of zone time but only use if needed
         float timeToFrontOfZone = (5.0f - projectile.position.z()) / projectile.velocity.z();
-        
+
         // Projectile passes through hit zone if timeToBackOfZone > 0
         if (timeToBackOfZone > 0.0f && timeToFrontOfZone > timeToBackOfZone) {
             willHitZone = true;
-            
+
             // We can use timeToFrontOfZone here if needed
             // For debugging: qDebug() << "Projectile will hit zone between" << timeToBackOfZone << "and" << timeToFrontOfZone;
         }
     }
-    
+
     // If projectile won't reach hit zone, adjust its trajectory
     if (!willHitZone) {
         // Set a target position in the hit zone
         float targetZ = 3.0f;  // Middle of hit zone
         float targetX = QRandomGenerator::global()->bounded(6) - 3;  // Random x between -3 and 3
         float targetY = 1.0f + (QRandomGenerator::global()->bounded(3));  // Random height between 1 and 4
-        
+
         // Calculate time to reach target (based on z-velocity)
         const float desiredTime = 2.0f;  // 2 seconds to reach target
-        
+
         // Calculate required velocity
         projectile.velocity.setZ((targetZ - projectile.position.z()) / desiredTime);
         projectile.velocity.setX((targetX - projectile.position.x()) / desiredTime);
-        
+
         // Account for gravity when setting y velocity: v_y = (y - y₀)/t + 0.5*g*t
-        projectile.velocity.setY((targetY - projectile.position.y()) / desiredTime + 
+        projectile.velocity.setY((targetY - projectile.position.y()) / desiredTime +
                                  0.5f * 9.8f * desiredTime);
     }
 }

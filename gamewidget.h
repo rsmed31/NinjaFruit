@@ -52,7 +52,7 @@ private slots:
 private:
     // Hand position
     QVector3D m_handPosition;
-    
+
     // Projectiles
     struct ProjectileRenderData {
         QVector3D position;
