@@ -38,11 +38,11 @@ public:
 private:
     bool m_wasSliced = false;
     bool m_wasProcessed = false;
-
+    
 public:
     // Split the projectile (when hit by player)
     void split();
-
+    
     // Getters
     QVector3D getPosition() const { return m_position; }
     QVector3D getVelocity() const { return m_velocity; }
@@ -57,7 +57,7 @@ public:
     void setPosition(const QVector3D& position) { m_position = position; }
     void setVelocity(const QVector3D& velocity) { m_velocity = velocity; }
     void setCreationTime(float time) { m_creationTime = time; }
-
+    
 private:
     QVector3D m_position;
     QVector3D m_velocity;
