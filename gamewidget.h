@@ -10,7 +10,6 @@
 #include <QVector3D>
 #include <QTimer>
 #include <QList>
-#include <QOpenGLTexture>
 
 // Forward declaration - class should be forward declared but not used directly
 class Projectile;
@@ -34,8 +33,6 @@ public:
     
     // Split a projectile at the specified index
     void splitProjectile(int index);
-    void loadTextures();
-    QOpenGLTexture* m_cylinderTexture = nullptr;
 
 signals:
     // Add this signal to notify when sword position changes
