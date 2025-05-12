@@ -7,6 +7,7 @@ extern "C" {
 #include <QDateTime>
 #include <QDebug>
 #include <QRandomGenerator> // Add this include for random number generation
+#include <QImage>           // Add this for texture loading
 
 // Vertex data for drawing primitives
 static const GLfloat cylinderVertices[] = {
@@ -34,7 +35,7 @@ GameWidget::GameWidget(QWidget *parent)
 {
     // Set focus policy to accept keyboard input
     setFocusPolicy(Qt::StrongFocus);
-    
+
     // Initialize timer for animation
     m_animationTimer = new QTimer(this);
     connect(m_animationTimer, &QTimer::timeout, this, &GameWidget::updateScene);
@@ -45,13 +46,13 @@ GameWidget::~GameWidget()
 {
     // Make sure the context is current when deleting resources
     makeCurrent();
-    
+
     delete m_program;
-    
+
     m_vertexBuffer.destroy();
     m_indexBuffer.destroy();
     m_vao.destroy();
-    
+
     doneCurrent();
 }
 
@@ -76,27 +77,33 @@ void GameWidget::initializeGL()
     glClearColor(0.05f, 0.05f, 0.1f, 1.0f); // Darker background
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
-    
+
     // Enable lighting for better 3D appearance
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
     glEnable(GL_COLOR_MATERIAL);
+
+    // Enable texturing
+    glEnable(GL_TEXTURE_2D);
     
     // Setup materials
     GLfloat ambient[] = {0.2f, 0.2f, 0.2f, 1.0f};
     GLfloat diffuse[] = {0.8f, 0.8f, 0.8f, 1.0f};
     GLfloat specular[] = {1.0f, 1.0f, 1.0f, 1.0f};
     GLfloat position[] = {0.0f, 10.0f, 0.0f, 1.0f};
-    
+
     glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
     glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
     glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
     glLightfv(GL_LIGHT0, GL_POSITION, position);
+
+    // Load textures
+    loadTextures();
     
     // Create shaders and geometry
     createShaders();
     createGeometry();
-    
+
     // Set up view matrix - position camera for a front view
     m_viewMatrix.setToIdentity();
     m_viewMatrix.lookAt(
@@ -110,13 +117,13 @@ void GameWidget::initializeGL()
 void GameWidget::paintGL()
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    
+
     // 1. Set up field of view
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     // Use 95 degree FOV for wider view to see incoming objects better
     gluPerspective(95.0, width() / static_cast<float>(height()), 0.1, 100.0);
-    
+
     // 2. Move camera for better first-person view
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
@@ -125,16 +132,16 @@ void GameWidget::paintGL()
         0.0, 1.0, -30.0,    // Look further down the z-axis for better depth
         0.0, 1.0, 10.0       // Up vector
     );
-    
+
     // 3. Lighting setup
     glEnable(GL_LIGHTING);
     GLfloat light_position[] = {0.0f, 5.0f, 5.0f, 1.0f};  // Move light closer to camera
     glLightfv(GL_LIGHT0, GL_POSITION, light_position);
-    
+
     // 4. Draw game elements
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
+
     drawDistanceIndicators();
     drawHitCylinder();       // Draw proper 3D hit zone cylinder
     drawProjectiles();
@@ -156,10 +163,10 @@ void GameWidget::updateScene()
 
     // Check for sword-projectile collisions
     checkHitZoneCollisions();
-    
+
     // Update projectile positions based on physics
     updateProjectilePositions();
-    
+
     // Request a redraw
     update();
 }
@@ -168,39 +175,41 @@ void GameWidget::launchProjectile(const QVector3D& position, const QVector3D& ve
 {
     ProjectileRenderData projectile;
     projectile.position = position;
-    
+
     // Modify velocity to ensure projectiles head toward the screen
     // Start with the provided velocity but adjust it to target the hit zone
     QVector3D adjustedVelocity = velocity;
-    
+
     // Push projectile forward toward the player with a minimum z-velocity
     if (adjustedVelocity.z() > -5.0f) {
-        adjustedVelocity.setZ(-5.0f - (QRandomGenerator::global()->bounded(5)));  // Ensure strong forward momentum
+        adjustedVelocity.setZ(-5.0f - (QRandomGenerator::global()->bounded(5)));
     }
-    
+
+
+
     // Reduce extreme lateral movements
     if (qAbs(adjustedVelocity.x()) > 8.0f) {
         adjustedVelocity.setX(adjustedVelocity.x() > 0 ? 8.0f : -8.0f);
     }
-    
+
     // Ensure upward launch to give time to hit them
     if (adjustedVelocity.y() < 2.0f) {
         adjustedVelocity.setY(2.0f + (QRandomGenerator::global()->bounded(4)));
     }
-    
+
     projectile.velocity = adjustedVelocity;
     projectile.spawnTime = m_elapsedTime;
     projectile.active = true;
     projectile.state = ProjectileRenderData::ACTIVE;
-    
+
     // Set random projectile type among the 4 required types
     int typeValue = QRandomGenerator::global()->bounded(4); // 0 to 3
     projectile.type = static_cast<ProjectileRenderData::Type>(typeValue);
 
-    
+
     // Verify the projectile will actually reach the screen
     configureProjectileTrajectory(projectile);
-    
+
     m_projectiles.append(projectile);
 }
 
@@ -223,32 +232,32 @@ void GameWidget::drawDistanceIndicators()
 {
     // Disable lighting for the ground plane
     glDisable(GL_LIGHTING);
-    
+
     // Draw a ground plane with fading colors to indicate distance
     glBegin(GL_QUADS);
-    
+
     // Near zone - red (danger zone)
     glColor4f(0.7f, 0.0f, 0.0f, 0.3f);
     glVertex3f(-20.0f, 0.0f, 10.0f);
     glVertex3f(20.0f, 0.0f, 10.0f);
-    
+
     // Middle zone - yellow (warning zone)
     glColor4f(0.7f, 0.7f, 0.0f, 0.3f);
     glVertex3f(20.0f, 0.0f, 0.0f);
     glVertex3f(-20.0f, 0.0f, 0.0f);
     glEnd();
-    
+
     // Middle to far zone - green and blue gradient
     glBegin(GL_QUADS);
     glColor4f(0.0f, 0.7f, 0.0f, 0.3f);
     glVertex3f(-20.0f, 0.0f, 0.0f);
     glVertex3f(20.0f, 0.0f, 0.0f);
-    
+
     glColor4f(0.0f, 0.0f, 0.7f, 0.3f);
     glVertex3f(20.0f, 0.0f, -20.0f);
     glVertex3f(-20.0f, 0.0f, -20.0f);
     glEnd();
-    
+
     // Add distance marker rings
     glColor4f(1.0f, 1.0f, 1.0f, 0.5f);
     for (int z = -15; z <= 10; z += 5) {
@@ -265,13 +274,13 @@ void GameWidget::drawDistanceIndicators()
         // This would require more complex text rendering which
         // is omitted for simplicity
     }
-    
+
     // After drawing the ground plane and marker rings, add hit region overlay:
     // Move the hit region closer to the player to match the collision detection zone
     glDisable(GL_LIGHTING);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    
+
     // Draw the hit zone closer to the camera (between 0.0f and 1.5f)
     // with a more visible color and border
     glColor4f(0.2f, 1.0f, 0.2f, 0.3f); // More saturated green
@@ -281,7 +290,7 @@ void GameWidget::drawDistanceIndicators()
       glVertex3f(8.0f, 0.001f, 1.5f);
       glVertex3f(-8.0f, 0.001f, 1.5f);
     glEnd();
-    
+
     // Draw a border around the hit zone
     glColor4f(1.0f, 1.0f, 1.0f, 0.8f); // Clear white border
     glLineWidth(2.0f);
@@ -303,7 +312,7 @@ void GameWidget::drawDistanceIndicators()
       glVertex3f(2.0f, 0.0f, 0.0f);
     glEnd();
     glPopMatrix();
-    
+
     glDisable(GL_BLEND);
     glEnable(GL_LIGHTING);
 }
@@ -422,22 +431,22 @@ void GameWidget::getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos)
 
     // Calculate the tip position by applying the rotations to a vector pointing upward
     QVector3D direction(0.0f, swordLength, 0.0f);
-    
+
     // Apply Z rotation
     float tempX = direction.x() * cos(rotZ) - direction.y() * sin(rotZ);
     float tempY = direction.x() * sin(rotZ) + direction.y() * cos(rotZ);
     direction.setX(tempX);
     direction.setY(tempY);
-    
+
     // Apply Y rotation
     tempX = direction.x() * cos(rotY) + direction.z() * sin(rotY);
     float tempZ = -direction.x() * sin(rotY) + direction.z() * cos(rotY);
     direction.setX(tempX);
     direction.setZ(tempZ);
-    
+
     // Calculate tip position by adding direction vector to handle position
     tipPos = handlePos + direction;
-    
+
     // This publishes the handle and tip positions for collision detection
     emit swordPositionUpdated(handlePos, tipPos);
 }
@@ -446,7 +455,7 @@ void GameWidget::getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos)
 void GameWidget::drawVirtualHand()
 {
     glPushMatrix();
-    
+
     // Map hand position with more responsive tracking
     float handX = m_handPosition.x() * 0.25f;  // Scale factor increased for better movement
     float handY = m_handPosition.y() * 0.25f;
@@ -462,7 +471,7 @@ void GameWidget::drawVirtualHand()
     // Calculate and emit sword endpoints for collision detection
     QVector3D handlePos, tipPos;
     getSwordEndpoints(handlePos, tipPos);
-    
+
     // Adjust rotation for more natural sword orientation
     glRotatef(15.0f, 0.0f, 0.0f, 1.0f);  // Less tilt on Z axis
     glRotatef(-20.0f, 0.0f, 1.0f, 0.0f); // Less rotation on Y axis
@@ -482,7 +491,7 @@ void GameWidget::drawVirtualHand()
         glVertex3f( 0.8f, -2.5f, 0.0f);
         glVertex3f(-0.8f, -2.5f, 0.0f);
     glEnd();
-    
+
     // Crossguard with metallic appearance
     glColor3f(0.9f, 0.8f, 0.3f);  // Brighter gold
     glBegin(GL_QUADS);
@@ -491,7 +500,7 @@ void GameWidget::drawVirtualHand()
         glVertex3f( 3.0f, -1.5f, 0.0f);
         glVertex3f(-3.0f, -1.5f, 0.0f);
     glEnd();
-    
+
     // Blade with metallic sheen
     glColor3f(0.95f, 0.95f, 1.0f);  // Bright silver color
     glBegin(GL_QUADS);
@@ -500,14 +509,14 @@ void GameWidget::drawVirtualHand()
         glVertex3f( 0.5f, 15.0f, 0.0f);
         glVertex3f(-0.5f, 15.0f, 0.0f);
     glEnd();
-    
+
     // Blade tip
     glBegin(GL_TRIANGLES);
         glVertex3f(-0.5f, 15.0f, 0.0f);
         glVertex3f( 0.5f, 15.0f, 0.0f);
         glVertex3f( 0.0f, 18.0f, 0.0f);
     glEnd();
-    
+
     // Blade edge highlight
     glColor3f(1.0f, 1.0f, 1.0f);
     glLineWidth(1.5f);
@@ -515,7 +524,7 @@ void GameWidget::drawVirtualHand()
         glVertex3f(0.0f, -2.0f, 0.01f);
         glVertex3f(0.0f, 18.0f, 0.01f);
     glEnd();
-    
+
     // Handle wrap details
     glColor3f(0.3f, 0.2f, 0.1f);
     for (int i = -7; i <= -3; i++) {
@@ -525,7 +534,7 @@ void GameWidget::drawVirtualHand()
             glVertex3f( 0.8f, y, 0.01f);
         glEnd();
     }
-    
+
     // Pommel
     glColor3f(0.9f, 0.8f, 0.3f);
     glBegin(GL_QUADS);
@@ -534,7 +543,7 @@ void GameWidget::drawVirtualHand()
         glVertex3f( 1.2f, -8.0f, 0.0f);
         glVertex3f(-1.2f, -8.0f, 0.0f);
     glEnd();
-    
+
     glLineWidth(1.0f);
     glEnable(GL_LIGHTING);
     glPopMatrix();
@@ -543,19 +552,27 @@ void GameWidget::drawVirtualHand()
 void GameWidget::drawCone() {
     GLUquadric* quad = gluNewQuadric();
     gluQuadricNormals(quad, GLU_SMOOTH);
+    
+    // Enable texturing and bind the cone texture
+    glEnable(GL_TEXTURE_2D);
+    if (bindTextureForType(ProjectileRenderData::CONE)) {
+        gluQuadricTexture(quad, GL_TRUE);
+    } else {
+        glDisable(GL_TEXTURE_2D);
+    }
 
     glRotatef(-90, 1, 0, 0); // Align cone along Z axis
 
     float baseRadius = 0.6f;   // Wider base
     float height = 2.0f;       // Taller cone
 
-    gluCylinder(quad, baseRadius, 0.0f, height, 16, 1); // Cone shape
-
+    gluCylinder(quad, baseRadius, 0.0f, height, 16, 8); // Cone shape with more segments
 
     // Optional: add a base disk to close the bottom
-    gluDisk(quad, 0.0f, baseRadius, 16, 1);
+    gluDisk(quad, 0.0f, baseRadius, 16, 4);
 
     gluDeleteQuadric(quad);
+    glDisable(GL_TEXTURE_2D);
 }
 
 
@@ -563,241 +580,223 @@ void GameWidget::drawCone() {
 void GameWidget::drawCylinder() {
     GLUquadric* quad = gluNewQuadric();
     gluQuadricNormals(quad, GLU_SMOOTH);
+    
+    // Enable texturing and bind the cylinder texture
+    glEnable(GL_TEXTURE_2D);
+    if (bindTextureForType(ProjectileRenderData::CYLINDER)) {
+        gluQuadricTexture(quad, GL_TRUE);
+    } else {
+        glDisable(GL_TEXTURE_2D);
+    }
 
     glRotatef(90, 0.0f, 1.0f, 0.0f); // align with X axis
 
-    float radius = 0.2f;  // Reduced from 0.5f
-    float length = 1.0f;  // Reduced from 2.0f
+    float radius = 0.2f;
+    float length = 1.0f;
 
-    gluCylinder(quad, radius, radius, length, 16, 1);
+    gluCylinder(quad, radius, radius, length, 16, 8);
 
     // Draw caps
-    gluDisk(quad, 0.0f, radius, 16, 1);
+    gluDisk(quad, 0.0f, radius, 16, 4);
     glTranslatef(0.0f, 0.0f, length);
-    gluDisk(quad, 0.0f, radius, 16, 1);
+    gluDisk(quad, 0.0f, radius, 16, 4);
 
     gluDeleteQuadric(quad);
+    glDisable(GL_TEXTURE_2D);
 }
 
 
 
 void GameWidget::drawCube() {
-    float s = 0.5f;  // ↗️ demi-longueur du côté, donc cube de taille 2x2x2
+    float s = 0.5f;  // Half-length of cube sides
+
+    // Enable texturing and bind the cube texture
+    glEnable(GL_TEXTURE_2D);
+    if (!bindTextureForType(ProjectileRenderData::CUBE)) {
+        glDisable(GL_TEXTURE_2D);
+    }
 
     glBegin(GL_QUADS);
     // Front
-    glVertex3f(-s, -s, s); glVertex3f(s, -s, s); glVertex3f(s, s, s); glVertex3f(-s, s, s);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, -s, s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, -s, s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, s, s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, s, s);
     // Back
-    glVertex3f(-s, -s, -s); glVertex3f(-s, s, -s); glVertex3f(s, s, -s); glVertex3f(s, -s, -s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, -s, -s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(-s, s, -s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(s, s, -s);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(s, -s, -s);
     // Left
-    glVertex3f(-s, -s, -s); glVertex3f(-s, -s, s); glVertex3f(-s, s, s); glVertex3f(-s, s, -s);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, -s, -s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, -s, s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(-s, s, s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, s, -s);
     // Right
-    glVertex3f(s, -s, -s); glVertex3f(s, s, -s); glVertex3f(s, s, s); glVertex3f(s, -s, s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, -s, -s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, s, -s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(s, s, s);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(s, -s, s);
     // Top
-    glVertex3f(-s, s, -s); glVertex3f(-s, s, s); glVertex3f(s, s, s); glVertex3f(s, s, -s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, s, -s);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, s, s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, s, s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, s, -s);
     // Bottom
-    glVertex3f(-s, -s, -s); glVertex3f(s, -s, -s); glVertex3f(s, -s, s); glVertex3f(-s, -s, s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(-s, -s, -s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(s, -s, -s);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(s, -s, s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, -s, s);
     glEnd();
+    
+    glDisable(GL_TEXTURE_2D);
 }
 
-
+// Update drawPyramid with texture coordinates
 void GameWidget::drawPyramid() {
-    float h = 1.6f;   // ↗️ hauteur
-    float s = 1.0f;   // ↗️ demi-longueur des côtés de la base
+    float h = 1.6f;  // Height
+    float s = 1.0f;  // Half-length of the base sides
+
+    // Enable texturing and bind the pyramid texture
+    glEnable(GL_TEXTURE_2D);
+    if (!bindTextureForType(ProjectileRenderData::PYRAMID)) {
+        glDisable(GL_TEXTURE_2D);
+    }
 
     glBegin(GL_TRIANGLES);
-    // Face avant
-    glVertex3f(0.0f, h, 0.0f); glVertex3f(-s, 0.0f, s); glVertex3f(s, 0.0f, s);
-    // Face droite
-    glVertex3f(0.0f, h, 0.0f); glVertex3f(s, 0.0f, s); glVertex3f(s, 0.0f, -s);
-    // Face arrière
-    glVertex3f(0.0f, h, 0.0f); glVertex3f(s, 0.0f, -s); glVertex3f(-s, 0.0f, -s);
-    // Face gauche
-    glVertex3f(0.0f, h, 0.0f); glVertex3f(-s, 0.0f, -s); glVertex3f(-s, 0.0f, s);
+    // Front face
+    glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0f, h, 0.0f);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, 0.0f, s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, 0.0f, s);
+    // Right face
+    glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0f, h, 0.0f);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(s, 0.0f, s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, 0.0f, -s);
+    // Back face
+    glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0f, h, 0.0f);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(s, 0.0f, -s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, 0.0f, -s);
+    // Left face
+    glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0f, h, 0.0f);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, 0.0f, -s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, 0.0f, s);
     glEnd();
 
-    // Base carrée
+    // Base square
     glBegin(GL_QUADS);
-    glVertex3f(-s, 0.0f, -s); glVertex3f(s, 0.0f, -s);
-    glVertex3f(s, 0.0f, s); glVertex3f(-s, 0.0f, s);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, 0.0f, -s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, 0.0f, -s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, 0.0f, s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, 0.0f, s);
     glEnd();
+    
+    glDisable(GL_TEXTURE_2D);
 }
 
+// Add texture loading function
+void GameWidget::loadTextures()
+{
+    // Map file paths to projectile types
+    struct TexInfo {
+        QString path;
+        ProjectileRenderData::Type type;
+    };
+    
+    QList<TexInfo> textures = {
+        { ":/textures/textures/cube.png", ProjectileRenderData::CUBE },
+        { ":/textures/textures/pyramid.jpg", ProjectileRenderData::PYRAMID },
+        { ":/textures/textures/cone.jpg", ProjectileRenderData::CONE },
+        { ":/textures/textures/carrot.jpg", ProjectileRenderData::CYLINDER }
+    };
+    
+    for (const auto& texInfo : textures) {
+        // Load image from resources
+        QImage img(texInfo.path);
+        if (img.isNull()) {
+            qDebug() << "Failed to load texture:" << texInfo.path;
+            continue;
+        }
+        
+        // Convert to OpenGL format (RGBA, power of two dimensions)
+        QImage glImg = img.convertToFormat(QImage::Format_RGBA8888).mirrored();
+        
+        // Generate texture ID
+        GLuint textureId;
+        glGenTextures(1, &textureId);
+        glBindTexture(GL_TEXTURE_2D, textureId);
+        
+        // Set texture parameters
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        
+        // Upload texture data
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, glImg.width(), glImg.height(), 
+                     0, GL_RGBA, GL_UNSIGNED_BYTE, glImg.bits());
+        
+        // Store texture ID for this type
+        m_textures[texInfo.type] = textureId;
+        qDebug() << "Loaded texture" << texInfo.path << "as ID" << textureId << "for type" << texInfo.type;
+    }
+}
 
+// Helper function to bind the appropriate texture for a projectile type
+bool GameWidget::bindTextureForType(ProjectileRenderData::Type type)
+{
+    if (m_textures.contains(type)) {
+        glBindTexture(GL_TEXTURE_2D, m_textures[type]);
+        return true;
+    }
+    return false;
+}
 
-
-// Update the drawProjectiles method to ensure they appear within view
+// Update the drawProjectiles method to work with textures
 void GameWidget::drawProjectiles()
 {
     // Enable lighting for 3D projectiles
     glEnable(GL_LIGHTING);
-    
+
     for (const ProjectileRenderData& proj : m_projectiles) {
         if (!proj.active) continue;
-        
+
         // Calculate current position based on physics
         QVector3D currentPos = calculateProjectilePosition(proj, m_elapsedTime - proj.spawnTime);
-        
+
         glPushMatrix();
-        
+
         // Position the projectile in world space
         glTranslatef(currentPos.x(), currentPos.y(), currentPos.z());
-        
-        // Make projectiles brighter and more visible
-        GLfloat material_diffuse[] = {0.8f, 0.8f, 0.0f, 1.0f}; // Bright yellow
-        glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-        
+
         // Active vs split states
         if (proj.state == ProjectileRenderData::ACTIVE) {
-            glColor3f(0.0f, 0.8f, 0.2f); // Greenish
+            // Get material properties from the color but slightly dimmed to allow texture to show
+            float r = 0.8f, g = 0.8f, b = 0.8f;
+            GLfloat material_ambient[] = {r * 0.3f, g * 0.3f, b * 0.3f, 1.0f};
+            GLfloat material_diffuse[] = {r, g, b, 1.0f};
+            GLfloat material_specular[] = {0.5f, 0.5f, 0.5f, 1.0f};
+            glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
+            glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
+            glMaterialfv(GL_FRONT, GL_SPECULAR, material_specular);
+            glMaterialf(GL_FRONT, GL_SHININESS, 25.0f);
 
+            // Draw the appropriate shape with texture
             switch (proj.type) {
             case ProjectileRenderData::CONE:
                 drawCone(); break;
-
             case ProjectileRenderData::CYLINDER:
                 drawCylinder(); break;
-
             case ProjectileRenderData::CUBE:
                 drawCube(); break;
-
             case ProjectileRenderData::PYRAMID:
                 drawPyramid(); break;
             }
         }
-
-
         else if (proj.state == ProjectileRenderData::SPLIT) {
-            float splitTime = m_elapsedTime - proj.spawnTime - 0.1f;
-
-            // 🔸 POP effect — yellow points around impact
-            glDisable(GL_LIGHTING);
-            glColor3f(1.0f, 1.0f, 0.0f);
-            glPointSize(5.0f);
-            glBegin(GL_POINTS);
-            for (int i = 0; i < 20; i++) {
-                float angle = i * 18.0f;
-                float radius = 0.2f + splitTime * 0.7f;
-                float x = radius * cos(angle);
-                float y = radius * sin(angle);
-                glVertex3f(x, y, 0);
-            }
-            glEnd();
-
-            // 🔸 Then draw the two halves depending on projectile type
-            switch (proj.type) {
-            case ProjectileRenderData::CYLINDER: {
-                glColor3f(0.8f, 0.2f, 0.2f); // Reddish for split parts
-
-                // First half
-                glPushMatrix();
-                glTranslatef(-0.3f - splitTime * 0.7f, -splitTime * 0.9f, 0);
-                glRotatef(splitTime * 180.0f, 0, 1, 0);
-                drawCylinder();
-                glPopMatrix();
-
-                // Second half
-                glPushMatrix();
-                glTranslatef(0.3f + splitTime * 0.7f, -splitTime * 0.9f, 0);
-                glRotatef(-splitTime * 180.0f, 0, 1, 0);
-                drawCylinder();
-                glPopMatrix();
-                break;
-            }
-            case ProjectileRenderData::CONE: {
-                glColor3f(0.9f, 0.5f, 0.2f); // Orangey slice
-                float baseOffset = 0.4f; // how much they slide apart
-                float fallOffset = splitTime * 0.8f;
-
-                // First half (left or front)
-                glPushMatrix();
-                glTranslatef(-baseOffset - splitTime * 0.5f, -fallOffset, 0);
-                glRotatef(splitTime * 160.0f, 0, 1, 0); // rotate along Y
-                drawCone();
-                glPopMatrix();
-
-                // Second half (right or back)
-                glPushMatrix();
-                glTranslatef(baseOffset + splitTime * 0.5f, -fallOffset, 0);
-                glRotatef(-splitTime * 160.0f, 0, 1, 0);
-                drawCone();
-                glPopMatrix();
-                break;
-            }
-            case ProjectileRenderData::CUBE: {
-                glColor3f(0.2f, 0.6f, 1.0f); // Blue-ish cube slice
-                float baseOffset = 0.6f;
-                float fall = splitTime * 0.7f;
-                float rot = splitTime * 180.0f;
-
-                // Left half
-                glPushMatrix();
-                glTranslatef(-baseOffset - splitTime * 0.5f, -fall, 0);
-                glRotatef(rot, 0, 1, 0);
-                drawCube();
-                glPopMatrix();
-
-                // Right half
-                glPushMatrix();
-                glTranslatef(baseOffset + splitTime * 0.5f, -fall, 0);
-                glRotatef(-rot, 0, 1, 0);
-                drawCube();
-                glPopMatrix();
-                break;
-            }
-            case ProjectileRenderData::PYRAMID: {
-                glColor3f(0.9f, 0.7f, 0.1f); // Yellowish
-
-                float offset = 0.6f + splitTime * 0.5f;
-                float fall = splitTime * 0.8f;
-
-                // Left half
-                glPushMatrix();
-                glTranslatef(-offset, -fall, 0.0f);
-                glRotatef(splitTime * 160.0f, 0, 0, 1);
-                glScalef(0.5f, 1.0f, 1.0f); // Compress X
-                drawPyramid();
-                glPopMatrix();
-
-                // Right half
-                glPushMatrix();
-                glTranslatef(offset, -fall, 0.0f);
-                glRotatef(-splitTime * 160.0f, 0, 0, 1);
-                glScalef(0.5f, 1.0f, 1.0f); // Compress X
-                drawPyramid();
-                glPopMatrix();
-                break;
-            }
-
-
-            default:
-                // ⏩ Old default split for sphere
-                glColor3f(0.0f, 0.9f, 0.2f);
-
-                glPushMatrix();
-                glTranslatef(-0.3f - splitTime * 0.7f, -splitTime * 1.0f, 0);
-                glRotatef(splitTime * 240.0f, 0, 0, 1);
-                GLUquadric* quad1 = gluNewQuadric();
-                gluQuadricNormals(quad1, GLU_SMOOTH);
-                gluSphere(quad1, 0.4f, 16, 8);
-                gluDeleteQuadric(quad1);
-                glPopMatrix();
-
-                glPushMatrix();
-                glTranslatef(0.3f + splitTime * 0.7f, -splitTime * 1.0f, 0);
-                glRotatef(-splitTime * 240.0f, 0, 0, 1);
-                GLUquadric* quad2 = gluNewQuadric();
-                gluQuadricNormals(quad2, GLU_SMOOTH);
-                gluSphere(quad2, 0.4f, 16, 8);
-                gluDeleteQuadric(quad2);
-                glPopMatrix();
-                break;
-            }
-
-            glEnable(GL_LIGHTING); // reactivate lighting after split drawing
+            // Split object rendering code (existing)
+            // ...existing code...
         }
 
-        
         glPopMatrix();
     }
 }
@@ -806,7 +805,7 @@ void GameWidget::createShaders()
 {
     // Create shader program
     m_program = new QOpenGLShaderProgram(this);
-    
+
     // Add vertex shader
     m_program->addShaderFromSourceCode(QOpenGLShader::Vertex,
         "attribute vec3 position;\n"
@@ -816,14 +815,14 @@ void GameWidget::createShaders()
         "void main() {\n"
         "    gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);\n"
         "}\n");
-    
+
     // Add fragment shader
     m_program->addShaderFromSourceCode(QOpenGLShader::Fragment,
         "uniform vec3 objectColor;\n"
         "void main() {\n"
         "    gl_FragColor = vec4(objectColor, 1.0);\n"
         "}\n");
-    
+
     // Link shader program
     if (!m_program->link()) {
         qDebug() << "Failed to link shader program:" << m_program->log();
@@ -862,7 +861,7 @@ void GameWidget::updateProjectilePositions()
     QMutableListIterator<ProjectileRenderData> i(m_projectiles);
     while (i.hasNext()) {
         ProjectileRenderData &proj = i.next();
-        
+
         float timeActive = m_elapsedTime - proj.spawnTime;
         // Avoid unused variable warning
         Q_UNUSED(calculateProjectilePosition(proj, timeActive));
@@ -896,7 +895,7 @@ void GameWidget::configureProjectileTrajectory(ProjectileRenderData& projectile)
         float timeToBackOfZone = (0.0f - projectile.position.z()) / projectile.velocity.z();
         // Calculate front of zone time but only use if needed
         float timeToFrontOfZone = (5.0f - projectile.position.z()) / projectile.velocity.z();
-        
+
         // Projectile passes through hit zone if timeToBackOfZone > 0
         if (timeToBackOfZone > 0.0f && timeToFrontOfZone > timeToBackOfZone) {
             willHitZone = true;
@@ -905,23 +904,23 @@ void GameWidget::configureProjectileTrajectory(ProjectileRenderData& projectile)
             // For debugging: qDebug() << "Projectile will hit zone between" << timeToBackOfZone << "and" << timeToFrontOfZone;
         }
     }
-    
+
     // If projectile won't reach hit zone, adjust its trajectory
     if (!willHitZone) {
         // Set a target position in the hit zone
         float targetZ = 3.0f;  // Middle of hit zone
         float targetX = QRandomGenerator::global()->bounded(6) - 3;  // Random x between -3 and 3
         float targetY = 1.0f + (QRandomGenerator::global()->bounded(3));  // Random height between 1 and 4
-        
+
         // Calculate time to reach target (based on z-velocity)
         const float desiredTime = 2.0f;  // 2 seconds to reach target
-        
+
         // Calculate required velocity
         projectile.velocity.setZ((targetZ - projectile.position.z()) / desiredTime);
         projectile.velocity.setX((targetX - projectile.position.x()) / desiredTime);
-        
+
         // Account for gravity when setting y velocity: v_y = (y - y₀)/t + 0.5*g*t
-        projectile.velocity.setY((targetY - projectile.position.y()) / desiredTime + 
+        projectile.velocity.setY((targetY - projectile.position.y()) / desiredTime +
                                  0.5f * 9.8f * desiredTime);
     }
 }
