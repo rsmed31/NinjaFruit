@@ -11,6 +11,8 @@ CalibrationWidget::CalibrationWidget(QWidget *parent, HandDetector* handDetector
     : QWidget(parent)
     , m_calibrationPhase(0)
     , m_handDetector(handDetector)
+    , m_multiPositionEnabled(false)
+    , m_supplementaryPositionsCount(0)
 {
     // Add verification that handDetector is valid
     if (!m_handDetector) {
@@ -42,6 +44,13 @@ CalibrationWidget::CalibrationWidget(QWidget *parent, HandDetector* handDetector
     instLayout->addWidget(m_statusLabel);
     instLayout->addWidget(m_captureButton);
     instLayout->addStretch();
+
+    // Add a new button for supplementary calibration points
+    m_captureSupplementaryButton = new QPushButton("Capture Additional Position");
+    m_captureSupplementaryButton->setVisible(false); // Hidden by default
+    connect(m_captureSupplementaryButton, &QPushButton::clicked, 
+            this, &CalibrationWidget::captureSupplementaryCalibrationPoint);
+    instLayout->addWidget(m_captureSupplementaryButton);
     
     mainLayout->addWidget(cameraArea, 3);
     mainLayout->addWidget(instructionArea, 1);
@@ -83,6 +92,9 @@ void CalibrationWidget::updateFrame()
     if (m_camera.isOpened()) {
         m_camera >> m_frame;
         if (!m_frame.empty()) {
+            // Flip the frame horizontally to correct the reversed camera feed
+            cv::flip(m_frame, m_frame, 1);
+
             m_qImage = matToQImage(m_frame);
             update(); // Trigger repaint
         }
@@ -265,6 +277,12 @@ void CalibrationWidget::captureCalibrationPoint()
         
         // Signal completion - this will trigger MainWindow::onCalibrationFinished
         emit calibrationFinished();
+
+        // Update UI for multi-position capability
+        if (m_multiPositionEnabled) {
+            m_captureSupplementaryButton->setVisible(true);
+            m_statusLabel->setText("Primary position captured. Now add different hand positions.");
+        }
     }
     catch (const std::exception& e) {
         qDebug() << "❌ Exception setting calibration image:" << e.what();
@@ -282,6 +300,99 @@ void CalibrationWidget::captureCalibrationPoint()
         } catch (const std::exception& e) {
             qDebug() << "❌ Exception reopening camera:" << e.what();
         }
+    }
+}
+
+void CalibrationWidget::captureSupplementaryCalibrationPoint()
+{
+    // Verify handDetector is available
+    if (!m_handDetector) {
+        qDebug() << "❌ HandDetector is NULL in captureSupplementaryCalibrationPoint";
+        QMessageBox::critical(this, "Calibration Failed", 
+                           "Internal error: Hand detector not initialized");
+        return;
+    }
+
+    // Make sure we have a valid frame
+    if (m_frame.empty()) {
+        qDebug() << "❌ Initial frame is empty - forcing new capture";
+        // Force multiple frame captures to ensure we get a valid one
+        for (int retries = 0; retries < 10; retries++) {
+            if (m_camera.isOpened()) {
+                m_camera >> m_frame;
+                if (!m_frame.empty()) {
+                    qDebug() << "✅ Successfully captured frame on retry" << retries;
+                    break;
+                }
+                QThread::msleep(100); // Short delay between attempts
+            }
+        }
+        
+        if (m_frame.empty()) {
+            QMessageBox::warning(this, "Calibration Failed", 
+                               "Could not capture frame after multiple attempts - check your camera");
+            return;
+        }
+    }
+    
+    // Create a deep copy of the frame
+    cv::Mat frameCopy = m_frame.clone();
+    
+    if (frameCopy.empty() || frameCopy.data == nullptr) {
+        qDebug() << "❌ Failed to create valid frame copy";
+        QMessageBox::warning(this, "Calibration Failed", 
+                           "Memory error while processing image - please try again");
+        return;
+    }
+    
+    // Extract ONLY the calibration square region
+    cv::Rect roi(m_calibrationSquare.x(), m_calibrationSquare.y(), 
+                 m_calibrationSquare.width(), m_calibrationSquare.height());
+    
+    // Make sure ROI is within frame bounds
+    roi = roi & cv::Rect(0, 0, frameCopy.cols, frameCopy.rows);
+    
+    // Check if ROI is valid
+    if (roi.width <= 10 || roi.height <= 10) {
+        qDebug() << "❌ Invalid ROI for supplementary calibration: " << roi.x << "," << roi.y 
+                 << " " << roi.width << "x" << roi.height;
+        QMessageBox::warning(this, "Calibration Failed", 
+                           "Calibration region invalid - please try again");
+        return;
+    }
+    
+    // Extract only the hand region (ROI)
+    cv::Mat handRegion = frameCopy(roi).clone();
+    
+    // Add visual marker
+    cv::circle(handRegion, cv::Point(handRegion.cols/2, handRegion.rows/2), 20, 
+              cv::Scalar(0, 255, 0), 2);
+    cv::putText(handRegion, "POSITION " + std::to_string(++m_supplementaryPositionsCount), 
+                cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 255, 0), 2);
+    
+    try {
+        // Add this as a supplementary calibration image
+        m_handDetector->addCalibrationImage(handRegion);
+        
+        // Update UI
+        m_statusLabel->setText(QString("Added position %1. Move hand and capture another, or finish.").arg(m_supplementaryPositionsCount));
+        
+        qDebug() << "✅ Supplementary calibration image successfully added";
+    }
+    catch (const std::exception& e) {
+        qDebug() << "❌ Exception adding supplementary calibration image:" << e.what();
+        QMessageBox::warning(this, "Calibration Failed", 
+                           "Error adding position: " + QString(e.what()));
+    }
+}
+
+void CalibrationWidget::enableMultiPositionCapture(bool enable)
+{
+    m_multiPositionEnabled = enable;
+    m_captureSupplementaryButton->setVisible(enable && m_calibrationPhase > 0);
+    
+    if (enable && m_handDetector) {
+        m_handDetector->clearSupplementaryCalibrations();
     }
 }
 
@@ -305,10 +416,12 @@ void CalibrationWidget::resetCalibration()
 {
     m_calibrationPhase = 0;
     m_calibData = CalibrationData();
+    m_supplementaryPositionsCount = 0;
     
     m_instructionLabel->setText("Place your hand in the calibration square and press Capture");
     m_statusLabel->setText("Calibration Phase 1/1");
     m_captureButton->setText("Capture Position");
+    m_captureSupplementaryButton->setVisible(false);
     
     disconnect(m_captureButton, &QPushButton::clicked, this, &CalibrationWidget::resetCalibration);
     connect(m_captureButton, &QPushButton::clicked, this, &CalibrationWidget::captureCalibrationPoint);

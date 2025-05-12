@@ -1,36 +1,33 @@
 #include "projectile.h"
 
 Projectile::Projectile(Type type)
-    : m_position(0.0f, 0.0f, 0.0f)
-    , m_velocity(0.0f, 0.0f, 0.0f)
-    , m_type(type)
-    , m_state(ACTIVE)
-    , m_creationTime(0.0f)
+    : m_type(type), m_state(ACTIVE)
 {
-    // Set properties based on type with more vibrant colors
     switch (type) {
-        case APPLE:
-            m_color = QColor(255, 0, 0);  // Bright Red
-            m_radius = 0.6f; // Larger size for better visibility
-            m_pointValue = 10;
-            break;
-        case ORANGE:
-            m_color = QColor(255, 140, 0); // Brighter Orange
-            m_radius = 0.45f;
-            m_pointValue = 15;
-            break;
-        case BANANA:
-            m_color = QColor(255, 255, 0); // Bright Yellow
-            m_radius = 0.35f;
-            m_pointValue = 20;
-            break;
-        case WATERMELON:
-            m_color = QColor(50, 205, 50);  // Lime Green
-            m_radius = 0.6f; // Larger
-            m_pointValue = 30;
-            break;
+    case CONE:
+        m_color = QColor(Qt::green);
+        m_pointValue = 10;
+        m_radius = 0.5f;
+        break;
+    case CYLINDER:
+        m_color = QColor(Qt::yellow);
+        m_pointValue = 15;
+        m_radius = 0.4f; // base radius of cylinder
+        break;
+    case CUBE:
+        m_color = QColor(Qt::red);
+        m_pointValue = 20;
+        m_radius = 0.5f * 1.414f; // diagonal from center to corner
+        break;
+    case PYRAMID:
+        m_color = QColor(Qt::magenta);
+        m_pointValue = 25;
+        m_radius = 0.5f * 1.2f; // approximate
+        break;
     }
 }
+
+
 
 void Projectile::update(float deltaTime)
 {

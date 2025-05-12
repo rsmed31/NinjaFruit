@@ -139,44 +139,50 @@ void GameEngine::spawnProjectile()
 
 void GameEngine::checkCollisions()
 {
-    // Define hit zone dimensions matching the visual representation
-    const float HIT_MIN_X = -8.0f;
-    const float HIT_MAX_X = 8.0f;
-    const float HIT_MIN_Z = 0.0f;
-    const float HIT_MAX_Z = 1.5f;
-    
+    // Define your sword‐plane and full game‐height
+    const float sliceZ      = 2.0f;    // Must match GameWidget’s z
+    const float zTolerance  = 0.3f;    // Allow for blade tilt (~2.0±0.3)
+    const float minZ        = sliceZ - zTolerance;
+    const float maxZ        = sliceZ + zTolerance;
+    const float minY        = 0.0f;    // Bottom of play area
+    const float maxY        = 10.0f;   // Top of play area
+
     for (int i = 0; i < m_projectiles.size(); i++) {
         Projectile& projectile = m_projectiles[i];
         if (projectile.getState() != Projectile::ACTIVE)
             continue;
-        
+
         QVector3D pos = projectile.getPosition();
-        
-        // Check if projectile is within hit zone boundaries (semi-cylindrical area)
-        bool inHitZone = (pos.x() >= HIT_MIN_X && pos.x() <= HIT_MAX_X && 
-                          pos.z() >= HIT_MIN_Z && pos.z() <= HIT_MAX_Z &&
-                          pos.y() >= 0.1f && pos.y() <= 5.0f);
-        
-        // Use line segment collision detection with the actual sword geometry
-        if (inHitZone && projectile.isColliding(m_swordHandle, m_swordTip)) {
-            qDebug() << "Collision detected with projectile" << i 
-                     << "at position" << pos 
-                     << "sword:" << m_swordHandle << "->" << m_swordTip;
-            
-            // Mark projectile as sliced
-            projectile.split();
-            projectile.markAsSliced();
-            
-            // Update score by adding projectile's point value
-            int points = projectile.getPointValue();
-            m_score += points;
-            qDebug() << "Adding" << points << "points, new score:" << m_score;
-            
-            emit scoreChanged(m_score);
-            emit projectileSplit(i);
+
+        // Check if projectile is within hit zone boundaries
+        bool inHitZone = (
+            pos.z() >= minZ && pos.z() <= maxZ &&
+            pos.y() >= minY && pos.y() <= maxY
+        );
+
+        if (inHitZone) {
+            // Use line segment collision detection with the actual sword geometry
+            if (projectile.isColliding(m_swordHandle, m_swordTip)) {
+                qDebug() << "Collision detected with projectile" << i 
+                         << "at position" << pos 
+                         << "sword:" << m_swordHandle << "->" << m_swordTip;
+                
+                // Mark projectile as sliced
+                projectile.split();
+                projectile.markAsSliced();
+                
+                // Update score by adding projectile's point value
+                int points = projectile.getPointValue();
+                m_score += points;
+                qDebug() << "Adding" << points << "points, new score:" << m_score;
+                
+                emit scoreChanged(m_score);
+                emit projectileSplit(i);
+            }
         }
     }
 }
+
 
 void GameEngine::updateProjectiles(float deltaTime)
 {
@@ -192,9 +198,16 @@ void GameEngine::updateProjectiles(float deltaTime)
 
         qDebug() << "Projectile" << i << "z:" << pos.z() << "state:" << projectile.getState() << "sliced:" << projectile.wasSliced();
 
+        // If the projectile has been sliced, mark it for removal immediately
+        // and skip all further checks to prevent lives from being decremented
+        if (projectile.wasSliced()) {
+            toRemove.append(i);
+            continue;  // Skip all other checks for sliced projectiles
+        }
+
         // Only when projectile exits far enough (z >= 15)
         if (pos.z() >= 15.0f && projectile.getState() == Projectile::ACTIVE) {
-            // First check if we need to deduct a life
+            // First check if we need to deduct a life - ONLY if it wasn't sliced
             if (!projectile.wasSliced() && !projectile.wasProcessed() && m_gameRunning) {
                 // MISS: lose 1 life
                 qDebug() << "MISSED - projectile" << i << "disappeared unsliced at z =" << pos.z();
@@ -213,16 +226,20 @@ void GameEngine::updateProjectiles(float deltaTime)
             
             // Mark projectile for removal
             projectile.split();
+            toRemove.append(i);
         }
 
         // Remove inactive projectiles
         if (projectile.getState() == Projectile::INACTIVE) {
-            toRemove.prepend(i);
+            toRemove.append(i);
         }
     }
     
     // Second pass: remove projectiles safely
-    foreach (int i, toRemove) {
+    // Sort indices in descending order to avoid index shifting problems
+    std::sort(toRemove.begin(), toRemove.end(), std::greater<int>());
+    
+    for (int i : toRemove) {
         if (i >= 0 && i < m_projectiles.size()) {
             emit projectileRemoved(i);
             m_projectiles.removeAt(i);
@@ -232,7 +249,26 @@ void GameEngine::updateProjectiles(float deltaTime)
 
 Projectile GameEngine::createRandomProjectile()
 {
-    Projectile::Type type = Projectile::APPLE;
+    // Randomly select a projectile type
+    int randomType = QRandomGenerator::global()->bounded(4); // Generate a random number from 0 to 3
+    Projectile::Type type;
+    
+    switch (randomType) {
+        case 0:
+            type = Projectile::CONE;
+            break;
+        case 1:
+            type = Projectile::CYLINDER;
+            break;
+        case 2:
+            type = Projectile::CUBE;
+            break;
+        case 3:
+            type = Projectile::PYRAMID;
+            break;
+        default:
+            type = Projectile::CYLINDER; // Fallback, should not happen
+    }
     
     Projectile projectile(type);
     
@@ -309,3 +345,5 @@ void GameEngine::addScore(int points)
     qDebug() << "Adding" << points << "points, new score:" << m_score;
     emit scoreChanged(m_score);
 }
+
+

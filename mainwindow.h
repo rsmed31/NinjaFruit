@@ -10,6 +10,7 @@
 #include <QStackedWidget>
 #include <QPushButton>
 #include <QTimer>
+#include <QCheckBox>  // Add this include for QCheckBox
 
 #include "calibrationwidget.h"
 #include "handdetector.h"
@@ -54,6 +55,7 @@ private:
     QPushButton* startButton;
     QPushButton* calibrateButton;
     QPushButton* exitButton;
+    QCheckBox* multiPositionCheck;  // Add this member variable
     
     // Game screen
     QWidget* gameScreen;
@@ -92,6 +94,10 @@ private:
     
     // Hand visualization for game screen
     QLabel* handVisualizationLabel;
+
+    // Smoothing variables
+    float lastX;  // Last valid X position for smoothing
+    float lastY;  // Last valid Y position for smoothing
     
     // Methods
     void setupUI();

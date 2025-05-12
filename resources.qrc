@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/textures">
+        <file>textures/carrot.jpg</file>
+        <file>textures/cone.jpg</file>
+        <file>textures/cube.png</file>
+        <file>textures/pyramid.jpg</file>
+    </qresource>
+</RCC>
