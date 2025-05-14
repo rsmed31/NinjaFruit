@@ -12,7 +12,6 @@ MainWindow::MainWindow(QWidget *parent)
     , handDetector(new HandDetector())
     , gameEngine(new GameEngine(this))
     , handPosWidget(nullptr)
-    , multiPositionCheck(nullptr)  // Initialize the checkbox pointer
     , lastX(0.0f)  // Initialize lastX
     , lastY(0.0f)  // Initialize lastY
 {
@@ -62,45 +61,73 @@ void MainWindow::setupUI()
     mainStack = new QStackedWidget();
     layout->addWidget(mainStack);
     
-    // 1. Create welcome screen with camera preview
+    // 1. Create elegant welcome screen with camera preview
     welcomeScreen = new QWidget();
+    welcomeScreen->setStyleSheet("background-color: #1a1a2e; color: white;"); // Dark elegant background
     QVBoxLayout* welcomeLayout = new QVBoxLayout(welcomeScreen);
+    welcomeLayout->setContentsMargins(40, 40, 40, 40); // More spacing for elegance
     
     QLabel* titleLabel = new QLabel("Ninja Fruit");
     titleLabel->setAlignment(Qt::AlignCenter);
-    QFont titleFont = titleLabel->font();
-    titleFont.setPointSize(32);
-    titleFont.setBold(true);
+    QFont titleFont("Arial", 48, QFont::Bold);
     titleLabel->setFont(titleFont);
+    titleLabel->setStyleSheet("color: #e94560; margin-bottom: 20px;"); // Striking color
     
     // Add camera preview to welcome screen
     QHBoxLayout* welcomeMiddleLayout = new QHBoxLayout();
+    welcomeMiddleLayout->setSpacing(30); // More spacing between elements
     
     // Add buttons in a vertical layout on left
     QVBoxLayout* welcomeButtonLayout = new QVBoxLayout();
+    welcomeButtonLayout->setSpacing(15); // More spacing between buttons
+    
+    // Style all buttons for a more elegant look
+    QString buttonStyle = "QPushButton {"
+                         "    background-color: #0f3460;"
+                         "    color: white;"
+                         "    border-radius: 10px;"
+                         "    padding: 15px;"
+                         "    font-size: 16px;"
+                         "    font-weight: bold;"
+                         "}"
+                         "QPushButton:hover {"
+                         "    background-color: #e94560;"
+                         "}"
+                         "QPushButton:pressed {"
+                         "    background-color: #533483;"
+                         "}";
+    
     startButton = new QPushButton("Start Game");
-    startButton->setMinimumHeight(50);
+    startButton->setMinimumHeight(60);
+    startButton->setStyleSheet(buttonStyle);
+    
     calibrateButton = new QPushButton("Calibrate");
-    calibrateButton->setMinimumHeight(50);
+    calibrateButton->setMinimumHeight(60);
+    calibrateButton->setStyleSheet(buttonStyle);
+    
     exitButton = new QPushButton("Exit");
-    exitButton->setMinimumHeight(50);
+    exitButton->setMinimumHeight(60);
+    exitButton->setStyleSheet(buttonStyle);
+    
     welcomeButtonLayout->addWidget(startButton);
     welcomeButtonLayout->addWidget(calibrateButton);
     welcomeButtonLayout->addWidget(exitButton);
     welcomeButtonLayout->addStretch();
     
-    // Add camera preview on right
+    // Add styled camera preview on right
     QVBoxLayout* welcomeCameraLayout = new QVBoxLayout();
+    welcomeCameraLayout->setSpacing(15);
+    
     welcomeCameraFeedLabel = new QLabel("Camera Feed");
     welcomeCameraFeedLabel->setFixedSize(320, 240);
     welcomeCameraFeedLabel->setScaledContents(true);
-    welcomeCameraFeedLabel->setStyleSheet("background-color: black; color: white; border: 1px solid gray;");
+    welcomeCameraFeedLabel->setStyleSheet("background-color: #16213e; color: #e94560; border: 2px solid #533483; border-radius: 10px;");
     welcomeCameraFeedLabel->setAlignment(Qt::AlignCenter);
     
     // Hand position visualization for welcome screen
     welcomeHandVisLabel = new QLabel("Hand Position");
     welcomeHandVisLabel->setFixedSize(320, 80);
-    welcomeHandVisLabel->setStyleSheet("background-color: #222; color: white; border: 1px solid gray;");
+    welcomeHandVisLabel->setStyleSheet("background-color: #16213e; color: #e94560; border: 2px solid #533483; border-radius: 10px;");
     
     welcomeCameraLayout->addWidget(welcomeCameraFeedLabel);
     welcomeCameraLayout->addWidget(welcomeHandVisLabel);
@@ -113,19 +140,11 @@ void MainWindow::setupUI()
     // Assemble welcome screen
     welcomeLayout->addStretch();
     welcomeLayout->addWidget(titleLabel);
-    welcomeLayout->addSpacing(20);
+    welcomeLayout->addSpacing(30);
     welcomeLayout->addLayout(welcomeMiddleLayout);
     welcomeLayout->addStretch();
     
-    // Add multi-position calibration checkbox to welcome screen
-    multiPositionCheck = new QCheckBox("Enable multi-position hand calibration");
-    multiPositionCheck->setObjectName("multiPositionCheck");
-    welcomeLayout->addWidget(multiPositionCheck);
-    connect(multiPositionCheck, &QCheckBox::toggled, this, [this](bool checked) {
-        if (calibrationWidget) {
-            calibrationWidget->enableMultiPositionCapture(checked);
-        }
-    });
+    // Remove multi-position calibration checkbox
     
     // 2. Create game screen with improved layout
     gameScreen = new QWidget();
@@ -247,11 +266,6 @@ void MainWindow::startCalibration()
     
     // Stop the processing timer if it's running
     processingTimer.stop();
-    
-    // Use the member variable directly instead of findChild
-    if (calibrationWidget) {
-        calibrationWidget->enableMultiPositionCapture(multiPositionCheck->isChecked());
-    }
     
     // Connect calibration complete signal
     connect(calibrationWidget, &CalibrationWidget::calibrationFinished,

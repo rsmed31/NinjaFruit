@@ -277,12 +277,6 @@ void CalibrationWidget::captureCalibrationPoint()
         
         // Signal completion - this will trigger MainWindow::onCalibrationFinished
         emit calibrationFinished();
-
-        // Update UI for multi-position capability
-        if (m_multiPositionEnabled) {
-            m_captureSupplementaryButton->setVisible(true);
-            m_statusLabel->setText("Primary position captured. Now add different hand positions.");
-        }
     }
     catch (const std::exception& e) {
         qDebug() << "❌ Exception setting calibration image:" << e.what();
@@ -388,12 +382,8 @@ void CalibrationWidget::captureSupplementaryCalibrationPoint()
 
 void CalibrationWidget::enableMultiPositionCapture(bool enable)
 {
-    m_multiPositionEnabled = enable;
-    m_captureSupplementaryButton->setVisible(enable && m_calibrationPhase > 0);
-    
-    if (enable && m_handDetector) {
-        m_handDetector->clearSupplementaryCalibrations();
-    }
+    // This method can be kept for compatibility but will have no effect
+    // since we're removing the multi-position calibration feature
 }
 
 void CalibrationWidget::calculateCalibration()
