@@ -116,18 +116,14 @@ QList<Projectile> GameEngine::getProjectiles() const
 
 void GameEngine::updateGame()
 {
-    // Calculate delta time (assumed ~16ms per frame at 60 FPS)
     float deltaTime = 0.016f;
     m_elapsedTime += deltaTime;
-    
-    // Update projectiles position based on physics
-    updateProjectiles(deltaTime);
-    
-    // Check for collisions with hand
+
+    // 1. Detect hits and mark sliced IDs
     checkCollisions();
-    
-    // Handle missed projectiles
-    handleMissedProjectiles();
+
+    // 2. Move projectiles and apply miss‐logic (lives)
+    updateProjectiles(deltaTime);
 }
 
 void GameEngine::spawnProjectile()
@@ -186,64 +182,38 @@ void GameEngine::checkCollisions()
 
 void GameEngine::updateProjectiles(float deltaTime)
 {
-    // Create temporary list of projectiles to remove
     QList<int> toRemove;
-    
-    // First pass: update and check projectiles
-    for (int i = 0; i < m_projectiles.size(); i++) {
-        Projectile& projectile = m_projectiles[i];
-        projectile.update(deltaTime);
+    for (int i = 0; i < m_projectiles.size(); ++i) {
+        Projectile& proj = m_projectiles[i];
+        proj.update(deltaTime);
 
-        QVector3D pos = projectile.getPosition();
-
-        qDebug() << "Projectile" << i << "z:" << pos.z() << "state:" << projectile.getState() << "sliced:" << projectile.wasSliced();
-
-        // If the projectile has been sliced, mark it for removal immediately
-        // and skip all further checks to prevent lives from being decremented
-        if (projectile.wasSliced()) {
-            toRemove.append(i);
-            continue;  // Skip all other checks for sliced projectiles
-        }
-
-        // Only when projectile exits far enough (z >= 15)
-        if (pos.z() >= 15.0f && projectile.getState() == Projectile::ACTIVE) {
-            // First check if we need to deduct a life - ONLY if it wasn't sliced
-            if (!projectile.wasSliced() && !projectile.wasProcessed() && m_gameRunning) {
-                // MISS: lose 1 life
-                qDebug() << "MISSED - projectile" << i << "disappeared unsliced at z =" << pos.z();
-                qDebug() << "BEFORE lives:" << m_lives;
+        if (proj.getPosition().z() >= 15.0f) {
+            if (proj.getState() == Projectile::ACTIVE && 
+                !proj.wasSliced() && !proj.wasProcessed()) {
                 m_lives = qMax(0, m_lives - 1);
-                qDebug() << "AFTER lives:" << m_lives;
                 emit livesChanged(m_lives);
-                projectile.markAsProcessed();
-                
+                proj.markAsProcessed();
+                proj.split();
+
                 if (m_lives <= 0) {
                     pauseGame();
                     emit gameOver(m_score);
                     break;
                 }
             }
-            
-            // Mark projectile for removal
-            projectile.split();
             toRemove.append(i);
+            continue;
         }
 
-        // Remove inactive projectiles
-        if (projectile.getState() == Projectile::INACTIVE) {
+        if (proj.getState() == Projectile::INACTIVE || proj.getState() == Projectile::SPLIT) {
             toRemove.append(i);
         }
     }
-    
-    // Second pass: remove projectiles safely
-    // Sort indices in descending order to avoid index shifting problems
+
     std::sort(toRemove.begin(), toRemove.end(), std::greater<int>());
-    
-    for (int i : toRemove) {
-        if (i >= 0 && i < m_projectiles.size()) {
-            emit projectileRemoved(i);
-            m_projectiles.removeAt(i);
-        }
+    for (int idx : toRemove) {
+        emit projectileRemoved(m_projectiles[idx].getId());
+        m_projectiles.removeAt(idx);
     }
 }
 
@@ -276,6 +246,7 @@ Projectile GameEngine::createRandomProjectile()
     projectile.setPosition(generateRandomLaunchPosition());
     projectile.setVelocity(generateRandomVelocity());
     projectile.setCreationTime(m_elapsedTime);
+    projectile.setId(QRandomGenerator::global()->generate()); // Assign unique ID
     
     return projectile;
 }
@@ -344,6 +315,37 @@ void GameEngine::addScore(int points)
     m_score += points;
     qDebug() << "Adding" << points << "points, new score:" << m_score;
     emit scoreChanged(m_score);
+}
+
+void GameEngine::markProjectileSlicedById(int id)
+{
+    for (Projectile& proj : m_projectiles) {
+        if (proj.getId() == id && !proj.wasSliced()) {
+            proj.markAsSliced();
+            proj.markAsProcessed(); // Prevent lives from decreasing
+            proj.split();           // Mark the projectile as split
+            m_score += proj.getPointValue();
+            emit scoreChanged(m_score);
+            break;
+        }
+    }
+}
+
+void GameEngine::addProjectile(const Projectile& projectile)
+{
+    // Store the original Projectile in m_projectiles
+    m_projectiles.push_back(projectile);
+    
+    // Create render data for the projectile
+    ProjectileRenderData renderData;
+    renderData.id = projectile.getId(); // Use the getter method to access the ID
+    // ...initialize other renderData fields...
+    
+    // Add to the render data list
+    m_projectileRenderData.push_back(renderData);
+    
+    // Emit signal for UI updating
+    emit projectileAdded(projectile);
 }
 
 

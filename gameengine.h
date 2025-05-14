@@ -6,7 +6,9 @@
 #include <QList>
 #include <QVector3D>
 #include <QRandomGenerator>
+#include <QSet>
 #include "projectile.h"
+#include "projectilerenderdata.h" // Add this include
 
 // Forward declaration of GameWidget to avoid circular dependency
 class GameWidget;
@@ -46,6 +48,9 @@ public:
 
     // Add score method declaration
     void addScore(int points);
+    
+    // Add the missing method declaration
+    void addProjectile(const Projectile& projectile);
 
 signals:
     // UI update signals
@@ -62,6 +67,7 @@ signals:
 public slots:
     // Add this slot to receive sword position updates
     void updateSwordPosition(const QVector3D& handlePos, const QVector3D& tipPos);
+    void markProjectileSlicedById(int id);
 
 private slots:
     void updateGame();
@@ -90,7 +96,9 @@ private:
     } m_launchZone;
     
     // Projectiles
-    QList<Projectile> m_projectiles;
+    QList<Projectile> m_projectiles; // List of projectiles
+    QList<ProjectileRenderData> m_projectileRenderData; // List to store render data
+    QSet<int> m_slicedProjectiles; // Track sliced projectiles by ID
     
     // Timers
     QTimer m_gameTimer;      // Main game update timer

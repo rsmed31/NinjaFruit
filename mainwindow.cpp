@@ -231,6 +231,8 @@ void MainWindow::setupConnections()
     
     // Connect GameEngine to GameWidget for sword position updates
     gameEngine->connectToGameWidget(gameWidget);
+    connect(gameWidget, &GameWidget::projectileSlicedById, 
+            gameEngine, &GameEngine::markProjectileSlicedById);
 }
 
 void MainWindow::startCalibration()

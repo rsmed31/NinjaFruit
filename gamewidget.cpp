@@ -203,10 +203,9 @@ void GameWidget::launchProjectile(const Projectile& projectile) {
     projData.spawnTime = m_elapsedTime;
     projData.active = true;
     projData.state = ProjectileRenderData::ACTIVE;
-    
-    // Verify the projectile will reach the screen
+    projData.id = projectile.getId(); // Assign unique ID
+
     configureProjectileTrajectory(projData);
-    
     m_projectiles.append(projData);
 }
 
@@ -1013,8 +1012,8 @@ void GameWidget::checkHitZoneCollisions()
             float dist = distanceBetweenSegments(handlePos, tipPos, cylStart, cylEnd);
 
             if (dist <= 0.5f) {
+                emit projectileSlicedById(proj.id); // Emit signal with projectile ID
                 splitProjectile(index);
-                emit scoreChanged(10);
                 qDebug() << "Cylinder HIT at index" << index;
             }
         } else if (proj.type == ProjectileRenderData::CONE) {
@@ -1024,8 +1023,8 @@ void GameWidget::checkHitZoneCollisions()
             float dist = distanceBetweenSegments(handlePos, tipPos, coneStart, coneEnd);
 
             if (dist <= 0.6f) {
+                emit projectileSlicedById(proj.id); // Emit signal with projectile ID
                 splitProjectile(index);
-                emit scoreChanged(10);
                 qDebug() << "Cone HIT at index" << index;
             }
         } else if (proj.type == ProjectileRenderData::PYRAMID) {
@@ -1035,8 +1034,8 @@ void GameWidget::checkHitZoneCollisions()
             float dist = distanceBetweenSegments(handlePos, tipPos, baseCenter, tip);
 
             if (dist <= 1.0f) {
+                emit projectileSlicedById(proj.id); // Emit signal with projectile ID
                 splitProjectile(index);
-                emit scoreChanged(10);
                 qDebug() << "Pyramid HIT at index" << index;
             }
         } else {
@@ -1048,8 +1047,8 @@ void GameWidget::checkHitZoneCollisions()
             float distToSword = (closest - pos).length();
 
             if (distToSword <= projectileRadius) {
+                emit projectileSlicedById(proj.id); // Emit signal with projectile ID
                 splitProjectile(index);
-                emit scoreChanged(10);
                 qDebug() << "Default HIT at index" << index;
             }
         }

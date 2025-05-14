@@ -22,6 +22,8 @@ public:
         INACTIVE   // To be removed from game
     };
     
+    static int nextId; // Static counter for unique IDs
+
     Projectile(Type type = CYLINDER);
     
     // Update position based on elapsed time
@@ -31,8 +33,8 @@ public:
     bool isColliding(const QVector3D& swordHandle, const QVector3D& swordTip) const;
     bool wasSliced() const { return m_wasSliced; }
     void markAsSliced() { m_wasSliced = true; }
-    bool wasProcessed() const { return m_wasProcessed; }
     void markAsProcessed() { m_wasProcessed = true; }
+    bool wasProcessed() const { return m_wasProcessed; }
 
 private:
     bool m_wasSliced = false;
@@ -51,11 +53,13 @@ public:
     State getState() const { return m_state; }
     int getPointValue() const { return m_pointValue; }
     float getCreationTime() const { return m_creationTime; }
+    int getId() const { return m_id; } // Getter for ID
     
     // Setters
     void setPosition(const QVector3D& position) { m_position = position; }
     void setVelocity(const QVector3D& velocity) { m_velocity = velocity; }
     void setCreationTime(float time) { m_creationTime = time; }
+    void setId(int id) { m_id = id; } // Setter for ID
 
 private:
     QVector3D m_position;
@@ -66,6 +70,7 @@ private:
     State m_state;
     int m_pointValue;
     float m_creationTime;
+    int m_id; // Unique identifier for the projectile
 };
 
 #endif // PROJECTILE_H

@@ -14,6 +14,7 @@
 
 // Include the full Projectile class rather than forward declaring it
 #include "projectile.h"
+#include "projectilerenderdata.h" // Add this include
 
 // Define ProjectileType enum
 enum class ProjectileType {
@@ -26,32 +27,6 @@ enum class ProjectileType {
     CUBE,
     PYRAMID
     // Add other types as needed
-};
-
-// Add this before the GameWidget class definition
-struct ProjectileRenderData {
-    enum Type {
-        CONE,
-        CYLINDER,
-        CUBE,
-        PYRAMID
-        // Remove unused fruit types (APPLE, ORANGE, etc.)
-    };
-    
-    enum State {
-        INACTIVE,
-        ACTIVE,
-        SPLIT,
-        DESTROYED
-    };
-    
-    QVector3D position;
-    QVector3D velocity;
-    Type type;
-    State state;
-    bool active;
-    float spawnTime;
-    // Add other rendering properties as needed
 };
 
 class GameWidget : public QOpenGLWidget, protected QOpenGLFunctions
@@ -82,6 +57,7 @@ signals:
     void swordPositionUpdated(const QVector3D& handlePos, const QVector3D& tipPos);
     void scoreChanged(int points);  // Properly declare the signal
     void livesChanged(int lives);   // Signal for lives updates
+    void projectileSlicedById(int id); // Signal for projectile sliced event
 
 protected:
     // OpenGL functions that must be implemented
@@ -164,7 +140,6 @@ private:
     void checkHitZoneCollisions();
 
     float getProjectileCollisionRadius(ProjectileRenderData::Type type) const;
-
 };
 
 #endif // GAMEWIDGET_H
