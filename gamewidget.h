@@ -103,7 +103,7 @@ private:
     void drawCylinder();
     void drawCube();
     void drawPyramid();
-
+    void drawHalfCone(bool mirror);
 //
     
     // Add missing declaration for getSwordEndpoints method
