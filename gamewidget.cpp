@@ -101,10 +101,43 @@ void GameWidget::initializeGL()
     glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
     glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
     glLightfv(GL_LIGHT0, GL_POSITION, position);
+//
+    // Enable secondary light source
+    glEnable(GL_LIGHT1);
+
+    // Define light1: overhead + angled
+    GLfloat light1_pos[] = {-5.0f, 5.0f, 5.0f, 1.0f};  // Slightly behind and above
+    GLfloat light1_diffuse[] = {0.3f, 0.3f, 0.3f, 1.0f};  // Soft white light
+    GLfloat light1_specular[] = {0.2f, 0.2f, 0.2f, 1.0f};
+
+    glLightfv(GL_LIGHT1, GL_POSITION, light1_pos);
+    glLightfv(GL_LIGHT1, GL_DIFFUSE, light1_diffuse);
+    glLightfv(GL_LIGHT1, GL_SPECULAR, light1_specular);
+    // Enable third light source
+    glEnable(GL_LIGHT2);
+
+    // Define light2: lower side fill light (e.g. under the player, angled up)
+    GLfloat light2_pos[] = {3.0f, -2.0f, 2.0f, 1.0f};  // From below right
+    GLfloat light2_diffuse[] = {0.2f, 0.2f, 0.5f, 1.0f}; // Cool bluish light
+    GLfloat light2_specular[] = {0.1f, 0.1f, 0.3f, 1.0f}; // Subtle specular highlights
+
+    glLightfv(GL_LIGHT2, GL_POSITION, light2_pos);
+    glLightfv(GL_LIGHT2, GL_DIFFUSE, light2_diffuse);
+    glLightfv(GL_LIGHT2, GL_SPECULAR, light2_specular);
+
+
 
     // Create shaders and geometry
     createShaders();
     createGeometry();
+    glEnable(GL_NORMALIZE);
+    glEnable(GL_LIGHTING);
+    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE); // ✅ Add this
+    glEnable(GL_LIGHT0);
+    glEnable(GL_LIGHT1);
+    glEnable(GL_LIGHT2);
+    glEnable(GL_NORMALIZE);
+    // glDisable(GL_CULL_FACE); // optional for test
 
     // Set up view matrix - position camera for a front view
     m_viewMatrix.setToIdentity();
@@ -508,28 +541,34 @@ void GameWidget::drawVirtualHand()
 
 
 void GameWidget::drawCone() {
-    // Enable texturing
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, m_textures[3]); // Cone texture
-    
+
     GLUquadric* quad = gluNewQuadric();
-    gluQuadricTexture(quad, GL_TRUE); // Enable texture coordinates
+    gluQuadricTexture(quad, GL_TRUE);
     gluQuadricNormals(quad, GLU_SMOOTH);
 
-    glRotatef(-90, 1, 0, 0); // Align cone along Z axis
+    glPushMatrix();
 
-    float baseRadius = 0.6f;   // Wider base
-    float height = 2.0f;       // Taller cone
+    // Flip direction so base faces viewer (Z- direction)
+    glRotatef(90, 1, 0, 0); // Cone points toward -Z
 
-    gluCylinder(quad, baseRadius, 0.0f, height, 16, 1); // Cone shape
+    float baseRadius = 0.6f;
+    float height = 2.0f;
 
+    // Draw cone
+    gluCylinder(quad, baseRadius, 0.0f, height, 16, 1);
 
-    // Optional: add a base disk to close the bottom
+    // Draw base at z = 0 (bottom after rotation)
     gluDisk(quad, 0.0f, baseRadius, 16, 1);
+
+    glPopMatrix();
 
     gluDeleteQuadric(quad);
     glDisable(GL_TEXTURE_2D);
 }
+
+
 
 
 
@@ -564,90 +603,185 @@ void GameWidget::drawCube() {
     // Enable texturing
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, m_textures[0]); // Cube texture
-    
+
     float s = 0.5f;  // half-length of side
 
     glBegin(GL_QUADS);
-    // Front
-    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, -s, s);
-    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, -s, s);
-    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, s, s);
-    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, s, s);
-    
-    // Back
+
+    // Front face (+Z)
+    glNormal3f(0.0f, 0.0f, 1.0f);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, -s,  s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f( s, -s,  s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f( s,  s,  s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s,  s,  s);
+
+    // Back face (-Z)
+    glNormal3f(0.0f, 0.0f, -1.0f);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f( s, -s, -s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, -s, -s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(-s,  s, -s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f( s,  s, -s);
+
+    // Left face (-X)
+    glNormal3f(-1.0f, 0.0f, 0.0f);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, -s, -s);
-    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, s, -s);
-    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, s, -s);
-    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, -s, -s);
-    
-    // Left
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, -s,  s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(-s,  s,  s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s,  s, -s);
+
+    // Right face (+X)
+    glNormal3f(1.0f, 0.0f, 0.0f);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f( s, -s,  s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f( s, -s, -s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f( s,  s, -s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f( s,  s,  s);
+
+    // Top face (+Y)
+    glNormal3f(0.0f, 1.0f, 0.0f);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s,  s,  s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f( s,  s,  s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f( s,  s, -s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s,  s, -s);
+
+    // Bottom face (-Y)
+    glNormal3f(0.0f, -1.0f, 0.0f);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, -s, -s);
-    glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, -s, s);
-    glTexCoord2f(1.0f, 1.0f); glVertex3f(-s, s, s);
-    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, s, -s);
-    
-    // Right
-    glTexCoord2f(0.0f, 0.0f); glVertex3f(s, -s, -s);
-    glTexCoord2f(0.0f, 1.0f); glVertex3f(s, s, -s);
-    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, s, s);
-    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, -s, s);
-    
-    // Top
-    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, s, -s);
-    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, s, s);
-    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, s, s);
-    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, s, -s);
-    
-    // Bottom
-    glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, -s, -s);
-    glTexCoord2f(1.0f, 0.0f); glVertex3f(s, -s, -s);
-    glTexCoord2f(1.0f, 1.0f); glVertex3f(s, -s, s);
-    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, -s, s);
+    glTexCoord2f(1.0f, 0.0f); glVertex3f( s, -s, -s);
+    glTexCoord2f(1.0f, 1.0f); glVertex3f( s, -s,  s);
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, -s,  s);
+
     glEnd();
-    
+
     glDisable(GL_TEXTURE_2D);
 }
 
+
 void GameWidget::drawPyramid() {
-    // Enable texturing
     glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, m_textures[1]); // Pyramid texture
-    
-    float h = 1.6f;   // height
-    float s = 1.0f;   // half-length of base sides
+    glBindTexture(GL_TEXTURE_2D, m_textures[1]);
+
+    float h = 1.6f; // height
+    float s = 1.0f; // half-length of base
 
     glBegin(GL_TRIANGLES);
-    // Front face
+
+    // Front face (+Z)
+    glNormal3f(0.0f, 0.707f, 0.707f);
     glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0f, h, 0.0f);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, 0.0f, s);
     glTexCoord2f(1.0f, 0.0f); glVertex3f(s, 0.0f, s);
-    
-    // Right face
+
+    // Right face (+X)
+    glNormal3f(0.707f, 0.707f, 0.0f);
     glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0f, h, 0.0f);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(s, 0.0f, s);
     glTexCoord2f(1.0f, 0.0f); glVertex3f(s, 0.0f, -s);
-    
-    // Back face
+
+    // Back face (-Z)
+    glNormal3f(0.0f, 0.707f, -0.707f);
     glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0f, h, 0.0f);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(s, 0.0f, -s);
     glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, 0.0f, -s);
-    
-    // Left face
+
+    // Left face (-X)
+    glNormal3f(-0.707f, 0.707f, 0.0f);
     glTexCoord2f(0.5f, 1.0f); glVertex3f(0.0f, h, 0.0f);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, 0.0f, -s);
     glTexCoord2f(1.0f, 0.0f); glVertex3f(-s, 0.0f, s);
+
     glEnd();
 
-    // Base square
+    // Base face (bottom, Y = 0)
     glBegin(GL_QUADS);
+    glNormal3f(0.0f, -1.0f, 0.0f);
     glTexCoord2f(0.0f, 0.0f); glVertex3f(-s, 0.0f, -s);
     glTexCoord2f(1.0f, 0.0f); glVertex3f(s, 0.0f, -s);
     glTexCoord2f(1.0f, 1.0f); glVertex3f(s, 0.0f, s);
     glTexCoord2f(0.0f, 1.0f); glVertex3f(-s, 0.0f, s);
     glEnd();
-    
+
     glDisable(GL_TEXTURE_2D);
 }
+
+void GameWidget::drawHalfCone(bool mirror)
+{
+    const float baseRadius = 0.6f;
+    const float height = 2.0f;
+    const int slices = 36;
+    const float angleStep = M_PI / slices;
+    const float slantHeight = sqrt(baseRadius * baseRadius + height * height);
+
+    // Slope direction for normals
+    const float nxBase = height / slantHeight;
+    const float nzBase = baseRadius / slantHeight;
+
+    glPushMatrix();
+    glRotatef(90, 1, 0, 0); // Align along -Z axis
+
+    if (mirror) {
+        glScalef(-1.0f, 1.0f, 1.0f);
+        glFrontFace(GL_CW); // correct normal winding after mirror
+    }
+
+    // Enable lighting-friendly material
+    GLfloat ambient[] = {0.3f, 0.3f, 0.3f, 1.0f};
+    GLfloat diffuse[] = {0.7f, 0.4f, 0.1f, 1.0f};  // light orange
+    GLfloat specular[] = {0.8f, 0.8f, 0.8f, 1.0f};
+    GLfloat shininess = 30.0f;
+
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, ambient);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, diffuse);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, specular);
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shininess);
+
+    // 🔵 Curved lateral surface
+    glBegin(GL_TRIANGLE_STRIP);
+    for (int i = 0; i <= slices; ++i) {
+        float angle = i * angleStep;
+        float x = baseRadius * cos(angle);
+        float y = baseRadius * sin(angle);
+
+        QVector3D normal = QVector3D(x * height, y * height, baseRadius * baseRadius).normalized();
+        glNormal3f(normal.x(), normal.y(), normal.z());
+
+        glTexCoord2f(static_cast<float>(i) / slices, 0.0f);
+        glVertex3f(x, y, 0.0f);             // base perimeter
+        glTexCoord2f(0.5f, 1.0f);
+        glVertex3f(0.0f, 0.0f, height);     // tip
+    }
+    glEnd();
+
+    // 🟢 Base cap (half-disk)
+    glBegin(GL_TRIANGLE_FAN);
+    glNormal3f(0.0f, 0.0f, -1.0f);
+    glTexCoord2f(0.5f, 0.5f);
+    glVertex3f(0.0f, 0.0f, 0.0f); // center
+    for (int i = 0; i <= slices; ++i) {
+        float angle = i * angleStep;
+        float x = baseRadius * cos(angle);
+        float y = baseRadius * sin(angle);
+        glTexCoord2f((x / baseRadius + 1.0f) / 2.0f, (y / baseRadius + 1.0f) / 2.0f);
+        glVertex3f(x, y, 0.0f);
+    }
+    glEnd();
+
+    // 🔴 Flat sliced face
+    glBegin(GL_QUADS);
+    glNormal3f(0.0f, mirror ? -1.0f : 1.0f, 0.0f);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(0.0f, 0.0f, height);   // tip
+    glTexCoord2f(1.0f, 0.0f); glVertex3f(baseRadius, 0.0f, 0.0f); // base
+    glTexCoord2f(1.0f, 1.0f); glVertex3f(baseRadius, 0.0f, 0.0f); // base
+    glTexCoord2f(0.0f, 1.0f); glVertex3f(0.0f, 0.0f, height);   // tip
+    glEnd();
+
+    if (mirror) {
+        glFrontFace(GL_CCW); // reset after mirroring
+    }
+
+    glPopMatrix();
+}
+
+
 
 // Update the drawProjectiles method to ensure they appear within view
 void GameWidget::drawProjectiles()
@@ -661,6 +795,12 @@ void GameWidget::drawProjectiles()
 
         glPushMatrix();
         glTranslatef(currentPos.x(), currentPos.y(), currentPos.z());
+        // Add self-rotation
+        float rotationSpeed = 120.0f; // degrees per second
+        float timeSinceSpawn = m_elapsedTime - proj.spawnTime;
+        float angle = fmod(timeSinceSpawn * rotationSpeed, 360.0f); // 0–360 wrap
+
+        glRotatef(angle, 0.0f, 1.0f, 0.0f); // Y-axis spin (adjust axis as needed)
 
         // Set material properties for textured rendering
         GLfloat material_diffuse[4] = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -740,25 +880,30 @@ void GameWidget::drawProjectiles()
                 glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
                 glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
 
+                // LEFT HALF
                 glEnable(GL_TEXTURE_2D);
                 glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
                 glPushMatrix();
                 glTranslatef(-offset, -fall, 0);
                 glRotatef(rot, 0, 1, 0);
-                drawCone();
+                drawHalfCone(false); // Left half
                 glPopMatrix();
                 glDisable(GL_TEXTURE_2D);
 
+                // RIGHT HALF
                 glEnable(GL_TEXTURE_2D);
                 glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
                 glPushMatrix();
                 glTranslatef(offset, -fall, 0);
                 glRotatef(-rot, 0, 1, 0);
-                drawCone();
+                drawHalfCone(true); // Right half (mirrored)
                 glPopMatrix();
                 glDisable(GL_TEXTURE_2D);
                 break;
             }
+
+
+
             case ProjectileRenderData::CUBE: {
                 float offset = 0.6f + splitTime * 0.15f;
                 float fall = splitTime * 0.15f;
