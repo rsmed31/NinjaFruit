@@ -2,6 +2,10 @@
 #include <iostream>
 #include <QDebug>
 #include <QMutexLocker>
+#include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/features2d.hpp>
+#include <vector>
 
 HandDetector::HandDetector()
     : m_isFirstFrame(true), 
@@ -12,90 +16,195 @@ HandDetector::HandDetector()
     qDebug() << "HandDetector initialized";
 }
 
-cv::Point HandDetector::detectHand(const cv::Mat &frame)
-{
-    // Skip processing if frame is empty
+cv::Point HandDetector::fallbackToORB(const cv::Mat &frame) {
     if (frame.empty()) {
+        qDebug() << "❌ Frame is empty in fallbackToORB.";
         return cv::Point(-1, -1);
     }
-    
-    QMutexLocker lock(&m_mutex);
-    
-    // Check if primary calibration exists
-    if (m_calibrationImage.empty()) {
-        return cv::Point(-1, -1);
-    }
-    
-    // Increment frame counters
-    m_frameCounter++;
-    m_contourFrameCounter++;
-    
-    //======== STEP 1: Downscale input frame to 50% (less aggressive downscale) ========
-    cv::Mat smallFrame;
-    const float scaleFactor = 0.5f; // 50% size: smoother, still performant
-    cv::resize(frame, smallFrame, cv::Size(), scaleFactor, scaleFactor);
 
-    //======== STEP 2: FLANN matching against calibration images ========
-    // Use motion-based ROI for faster processing
-    cv::Rect motionROI = detectMotionROI(smallFrame);
-    
-    // Track last successful position for smoothing
-    static cv::Point lastPosition(-1, -1);
-    cv::Point result(-1, -1);
-    
-    // Try primary calibration image every frame
-    result = matchImageFLANN(m_calibrationImage, smallFrame, motionROI);
-    
-    // Try supplementary calibration images only every 5 frames (reduced frequency)
-    if (result.x < 0 && !m_additionalCalibrations.empty() && m_frameCounter % 5 == 0) {
-        for (const auto& calibImg : m_additionalCalibrations) {
-            result = matchImageFLANN(calibImg, smallFrame, motionROI);
-            if (result.x >= 0) {
-                break;
-            }
+    try {
+        // Initialize ORB detector
+        cv::Ptr<cv::ORB> orb = cv::ORB::create(500); // ORB with 500 features
+        std::vector<cv::KeyPoint> keypointsFrame;
+        cv::Mat descriptorsFrame;
+
+        // Detect and compute ORB features
+        orb->detectAndCompute(frame, cv::noArray(), keypointsFrame, descriptorsFrame);
+
+        if (descriptorsFrame.empty() || keypointsFrame.empty()) {
+            qDebug() << "❌ No ORB features detected in the frame.";
+            return cv::Point(-1, -1);
+        }
+
+        // Match descriptors using BFMatcher
+        cv::BFMatcher bfMatcher(cv::NORM_HAMMING);
+        std::vector<cv::DMatch> matches;
+        bfMatcher.match(m_refDescriptors, descriptorsFrame, matches);
+
+        if (matches.empty()) {
+            qDebug() << "❌ No ORB matches found.";
+            return cv::Point(-1, -1);
+        }
+
+        // Compute the centroid of matched keypoints
+        cv::Point2f centroid(0.0f, 0.0f);
+        for (const auto &match : matches) {
+            centroid += keypointsFrame[match.trainIdx].pt;
+        }
+        centroid.x /= matches.size();
+        centroid.y /= matches.size();
+
+        qDebug() << "✅ ORB fallback centroid:" << centroid.x << "," << centroid.y;
+        return cv::Point(static_cast<int>(centroid.x), static_cast<int>(centroid.y));
+    } catch (const cv::Exception &e) {
+        qDebug() << "❌ OpenCV exception in fallbackToORB:" << e.what();
+        return cv::Point(-1, -1);
+    } catch (const std::exception &e) {
+        qDebug() << "❌ Standard exception in fallbackToORB:" << e.what();
+        return cv::Point(-1, -1);
+    }
+}
+
+cv::Point HandDetector::detectHand(const cv::Mat &frame) {
+    if (frame.empty() || m_calibrationImage.empty()) {
+        return fallbackToORB(frame); // Use fallback if frame or calibration image is empty
+    }
+
+    QMutexLocker lock(&m_mutex);
+
+    // Convert frame to HSV and threshold to a skin mask
+    cv::Mat hsvFrame, skinMask;
+    cv::cvtColor(frame, hsvFrame, cv::COLOR_BGR2HSV);
+    cv::inRange(hsvFrame, cv::Scalar(0, 30, 60), cv::Scalar(20, 150, 255), skinMask);
+    cv::morphologyEx(skinMask, skinMask, cv::MORPH_OPEN, cv::Mat(), cv::Point(-1, -1), 2);
+    cv::morphologyEx(skinMask, skinMask, cv::MORPH_CLOSE, cv::Mat(), cv::Point(-1, -1), 2);
+
+    int nonZeroPixels = cv::countNonZero(skinMask);
+    qDebug() << "Skin mask non-zero pixels:" << nonZeroPixels;
+
+    // Find the largest skin-blob contour
+    std::vector<std::vector<cv::Point>> contours;
+    cv::findContours(skinMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+    cv::Rect boundingRect(0, 0, frame.cols, frame.rows); // Default to full frame
+    if (!contours.empty()) {
+        auto largestContour = *std::max_element(contours.begin(), contours.end(),
+            [](const std::vector<cv::Point>& a, const std::vector<cv::Point>& b) {
+                return cv::contourArea(a) < cv::contourArea(b);
+            });
+
+        double largestArea = cv::contourArea(largestContour);
+        qDebug() << "Largest contour area:" << largestArea;
+
+        if (largestArea >= 1000) {
+            boundingRect = cv::boundingRect(largestContour);
+
+            // Expand boundingRect by 20% in each direction
+            int paddingX = static_cast<int>(boundingRect.width * 0.2);
+            int paddingY = static_cast<int>(boundingRect.height * 0.2);
+            boundingRect.x = std::max(0, boundingRect.x - paddingX);
+            boundingRect.y = std::max(0, boundingRect.y - paddingY);
+            boundingRect.width = std::min(frame.cols - boundingRect.x, boundingRect.width + 2 * paddingX);
+            boundingRect.height = std::min(frame.rows - boundingRect.y, boundingRect.height + 2 * paddingY);
+        } else {
+            qDebug() << "Contour area too small, falling back to full frame.";
+        }
+    } else {
+        qDebug() << "No contours found, falling back to full frame.";
+    }
+
+    // Ensure m_posBuffer and m_lastReported are initialized
+    if (m_posBuffer.empty()) {
+        m_lastReported = cv::Point2f(-1, -1);
+    }
+
+    // Extract SIFT keypoints and descriptors within the ROI
+    cv::Mat roiFrame = frame(boundingRect);
+    std::vector<cv::KeyPoint> keypointsFrame;
+    cv::Mat descriptorsFrame;
+    cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
+    sift->detectAndCompute(roiFrame, cv::noArray(), keypointsFrame, descriptorsFrame);
+
+    if (descriptorsFrame.empty()) {
+        return fallbackToORB(frame);
+    }
+
+    // Declare and initialize matcher (e.g., using BFMatcher with default parameters)
+    cv::BFMatcher matcher(cv::NORM_L2, true); // Adjust parameters as needed
+
+    // Prepare for matched points only
+    std::vector<cv::Point2f> pointsRef;
+    std::vector<cv::Point2f> pointsFrame;
+    std::vector<std::vector<cv::DMatch>> knnMatches;
+    matcher.knnMatch(m_refDescriptors, descriptorsFrame, knnMatches, 2);
+
+    for (const auto &match : knnMatches) {
+        if (match.size() >= 2 && match[0].distance < 0.8f * match[1].distance) {
+            pointsRef.push_back(m_refPoints[match[0].queryIdx]);
+            pointsFrame.push_back(keypointsFrame[match[0].trainIdx].pt + cv::Point2f(boundingRect.x, boundingRect.y));
         }
     }
-    
-    //======== STEP 5: Position smoothing ========
-    // Scale result back to original image size
-    if (result.x >= 0) {
-        result.x = static_cast<int>(result.x / scaleFactor);
-        result.y = static_cast<int>(result.y / scaleFactor);
-        
-        // Apply 80-20 temporal smoothing if we have a previous position
-        if (lastPosition.x >= 0) {
-            result.x = static_cast<int>(0.8 * result.x + 0.2 * lastPosition.x);
-            result.y = static_cast<int>(0.8 * result.y + 0.2 * lastPosition.y);
-        }
-        lastPosition = result;
-        
-        //======== STEP 6-8: Shape validation (only every 3 frames) ========
-        if (m_contourFrameCounter % 3 == 0) {
-            // Extract ROI around the detected position for contour detection
-            int roiSize = 200; // 200x200 ROI
-            cv::Rect handROI(
-                std::max(0, result.x - roiSize/2),
-                std::max(0, result.y - roiSize/2),
-                std::min(frame.cols - (result.x - roiSize/2), roiSize),
-                std::min(frame.rows - (result.y - roiSize/2), roiSize)
-            );
-            
-            // Validate hand shape in the ROI
-            if (handROI.width > 20 && handROI.height > 20) {
-                validateHandShape(frame(handROI), result);
-            }
-            
-            // Reset counter
-            m_contourFrameCounter = 0;
+    qDebug() << "✅ Good matches found:" << pointsRef.size();
+
+    if (pointsFrame.size() < 4 || pointsRef.size() != pointsFrame.size()) {
+        qDebug() << "❌ Not enough good matches or mismatched sizes.";
+        return fallbackToORB(frame);
+    }
+
+    // Clear inlier points before pushing new ones
+    m_lastInlierPoints.clear();
+
+    // Find homography and filter inliers
+    cv::Mat inliersMask;
+    cv::Mat H = cv::findHomography(m_refPoints, pointsFrame, cv::RANSAC, 3.0, inliersMask);
+    if (H.empty() || cv::countNonZero(inliersMask) < 4) {
+        return fallbackToORB(frame);
+    }
+
+    // Compute raw position as the mean of inlier points
+    cv::Point2f rawPos(0, 0);
+    int inlierCount = 0;
+    for (size_t i = 0; i < pointsFrame.size(); ++i) {
+        if (inliersMask.at<uchar>(i)) {
+            rawPos += pointsFrame[i];
+            ++inlierCount;
         }
     }
-    
-    // Store current frame as previous for next motion detection
-    smallFrame.copyTo(m_prevFrame);
-    m_prevHandPos = result;
-    m_isFirstFrame = false;
-    
-    return result;
+    if (inlierCount > 0) {
+        rawPos.x /= inlierCount;
+        rawPos.y /= inlierCount;
+    }
+
+    // Store rawPos in a circular buffer
+    m_posBuffer.push_back(rawPos);
+    if (m_posBuffer.size() > 5) {
+        m_posBuffer.pop_front();
+    }
+
+    // Compute buffer position as the mean of the buffer
+    cv::Point2f bufferPos(0, 0);
+    for (const auto &pos : m_posBuffer) {
+        bufferPos += pos;
+    }
+    bufferPos.x /= m_posBuffer.size();
+    bufferPos.y /= m_posBuffer.size();
+
+    // Apply dead-band logic
+    if (std::abs(bufferPos.x - m_lastReported.x) > 20 || std::abs(bufferPos.y - m_lastReported.y) > 20) {
+        bufferPos = m_lastReported;
+    }
+
+    m_lastReported = bufferPos;
+
+    // Store inlier points for visualization
+    m_lastInlierPoints.clear();
+    for (size_t i = 0; i < pointsFrame.size(); ++i) {
+        if (inliersMask.at<uchar>(i)) {
+            m_lastInlierPoints.push_back(pointsFrame[i]);
+        }
+    }
+
+    return cv::Point(static_cast<int>(bufferPos.x), static_cast<int>(bufferPos.y));
 }
 
 cv::Rect HandDetector::detectMotionROI(const cv::Mat &frame)
@@ -183,145 +292,75 @@ cv::Rect HandDetector::detectMotionROI(const cv::Mat &frame)
     return fullFrameROI;
 }
 
-cv::Point HandDetector::matchImageFLANN(const cv::Mat &refImage, const cv::Mat &frame, const cv::Rect &roi)
-{
+cv::Point HandDetector::matchImageFLANN(const cv::Mat &refImage,
+                                       const cv::Mat &frame,
+                                       const cv::Rect &roi) {
+    // Validation checks
+    if (m_refDescriptors.empty() || m_refPoints.empty() || frame.empty() || 
+        roi.width <= 0 || roi.height <= 0) {
+        qDebug() << "❌ Invalid frame, ROI, or reference data in matchImageFLANN. Skipping matching.";
+        return cv::Point(-1, -1);
+    }
+
     try {
-        // Crop frame to ROI for faster processing
+        // Crop and compute SIFT
         cv::Mat roiFrame = frame(roi).clone();
-        
-        //======== STEP 2: SIFT feature extraction ========
-        // Configure SIFT for much fewer features and faster processing
-        cv::Ptr<cv::SIFT> sift = cv::SIFT::create(
-            20,     // Reduced from 50 to 20 features
-            3,      // Reduced octave layers
-            0.04,   // Increased contrast threshold
-            10,     // Increased edge threshold 
-            1.6     // Standard sigma
-        ); 
-        
-        std::vector<cv::KeyPoint> keypointsRef, keypointsFrame;
-        cv::Mat descriptorsRef, descriptorsFrame;
-        
-        // Extract features only from the reference image once
-        static bool refFeaturesComputed = false;
-        static std::vector<cv::KeyPoint> cachedKeypointsRef;
-        static cv::Mat cachedDescriptorsRef;
-        
-        // Compute reference features only once and cache them
-        if (!refFeaturesComputed) {
-            sift->detectAndCompute(refImage, cv::noArray(), cachedKeypointsRef, cachedDescriptorsRef);
-            refFeaturesComputed = true;
-        }
-        keypointsRef = cachedKeypointsRef;
-        descriptorsRef = cachedDescriptorsRef;
-        
-        // Quick check - if reference image has too few descriptors, exit early
-        if (descriptorsRef.empty() || keypointsRef.size() < 3) {
-            return cv::Point(-1, -1);
-        }
-        
-        // Extract features from current frame
+        cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
+        std::vector<cv::KeyPoint> keypointsFrame;
+        cv::Mat descriptorsFrame;
         sift->detectAndCompute(roiFrame, cv::noArray(), keypointsFrame, descriptorsFrame);
-        
-        // EARLY TRIGGER: If we have enough descriptors, we consider it a potential match
-        // Minimum threshold for number of keypoints in frame
-        const int MIN_KEYPOINTS = 5;
+
         if (descriptorsFrame.empty() || keypointsFrame.size() < MIN_KEYPOINTS) {
             return cv::Point(-1, -1);
         }
-        
-        //======== STEP 3: FLANN matching - more efficient configuration ========
-        // Use a more efficient search - fewer trees, fewer checks
+
+        // Match descriptors via FlannBasedMatcher
         cv::FlannBasedMatcher matcher(
-            new cv::flann::KDTreeIndexParams(2),     // Fewer trees
-            new cv::flann::SearchParams(32)          // Fewer checks
+            cv::makePtr<cv::flann::KDTreeIndexParams>(4),
+            cv::makePtr<cv::flann::SearchParams>(64)
         );
-        
         std::vector<std::vector<cv::DMatch>> knnMatches;
-        matcher.knnMatch(descriptorsRef, descriptorsFrame, knnMatches, 2);
-        
-        // Apply Lowe's ratio test with faster implementation
-        // Preallocate vectors to avoid reallocations
+        matcher.knnMatch(m_refDescriptors, descriptorsFrame, knnMatches, 2);
+
+        // Apply Lowe's ratio test
         std::vector<cv::Point2f> pointsRef, pointsFrame;
-        pointsRef.reserve(knnMatches.size());
-        pointsFrame.reserve(knnMatches.size());
-        
-        // Simplified matching loop with fewer filters for speed
-        const float RATIO_THRESHOLD = 0.75f; // Slightly relaxed ratio test
-        int goodMatchCount = 0;
-        
-        for (const auto& match : knnMatches) {
-            if (match.size() < 2) continue;
-            
-            // Simplified Lowe's ratio test only, skip other filters
-            if (match[0].distance < RATIO_THRESHOLD * match[1].distance) {
-                // Get the keypoints from this match
-                cv::KeyPoint kpRef = keypointsRef[match[0].queryIdx];
-                cv::KeyPoint kpFrame = keypointsFrame[match[0].trainIdx];
-                
-                // Store points for homography
-                pointsRef.push_back(kpRef.pt);
-                pointsFrame.push_back(cv::Point2f(kpFrame.pt.x + roi.x, kpFrame.pt.y + roi.y)); // Adjust for ROI offset
-                goodMatchCount++;
+        for (const auto &match : knnMatches) {
+            if (match.size() >= 2 &&
+                match[0].distance < RATIO_THRESHOLD * match[1].distance) {
+                pointsRef.push_back(m_refPoints[match[0].queryIdx]);
+                cv::Point2f pf = keypointsFrame[match[0].trainIdx].pt;
+                pointsFrame.push_back(pf + cv::Point2f((float)roi.x, (float)roi.y));
             }
         }
-        
-        // EFFICIENT TRIGGER: Skip expensive RANSAC if we don't have enough good matches
-        // Minimum threshold for number of good matches
-        const int MIN_GOOD_MATCHES = 3;
-        if (goodMatchCount < MIN_GOOD_MATCHES) {
+
+        if (pointsFrame.size() < MIN_GOOD_MATCHES) {
             return cv::Point(-1, -1);
         }
-        
-        // SIMPLIFY: Skip homography for speed with small point sets
-        if (pointsRef.size() < 8) {
-            // With fewer points, just use centroid directly
-            cv::Point2f centroid(0.0f, 0.0f);
-            for (const auto& pt : pointsFrame) {
-                centroid += pt;
-            }
-            centroid.x /= pointsFrame.size();
-            centroid.y /= pointsFrame.size();
-            
-            return cv::Point(static_cast<int>(centroid.x), static_cast<int>(centroid.y));
-        }
-        
-        //======== STEP 4: RANSAC geometric filtering (only for larger point sets) ========
-        // Use RANSAC with homography for geometric consistency check
+
         cv::Mat inliersMask;
-        cv::Mat H = cv::findHomography(pointsRef, pointsFrame, cv::RANSAC, 5.0, inliersMask);
-        
-        // Filter to only use RANSAC inliers
-        std::vector<cv::Point2f> inlierPoints;
-        inlierPoints.reserve(pointsFrame.size());
-        
-        for (size_t i = 0; i < pointsFrame.size(); i++) {
-            if (inliersMask.at<uchar>(i) > 0) {
-                inlierPoints.push_back(pointsFrame[i]);
-            }
-        }
-        
-        // If we don't have enough inliers, return no detection
-        if (inlierPoints.size() < 3) {
+        cv::Mat H = cv::findHomography(pointsRef, pointsFrame,
+                                        cv::RANSAC, 3.0, inliersMask);
+        if (H.empty() || cv::countNonZero(inliersMask) < MIN_GOOD_MATCHES) {
             return cv::Point(-1, -1);
         }
-        
-        // Compute final position as average of inlier points (barycenter)
-        cv::Point2f centroid(0.0f, 0.0f);
-        for (const auto& pt : inlierPoints) {
-            centroid += pt;
+
+        // Compute centroid of inlier points
+        cv::Point2f rawPos(0, 0);
+        int count = 0;
+        for (size_t i = 0; i < pointsFrame.size(); ++i) {
+            if (inliersMask.at<uchar>(i)) {
+                rawPos += pointsFrame[i];
+                ++count;
+                m_lastInlierPoints.push_back(pointsFrame[i]);
+            }
         }
-        centroid.x /= inlierPoints.size();
-        centroid.y /= inlierPoints.size();
-        
-        return cv::Point(static_cast<int>(centroid.x), static_cast<int>(centroid.y));
-    }
-    catch (const cv::Exception&) {
-        // Silently fail on OpenCV errors
+        if (count) rawPos *= (1.f / count);
+        m_lastRawPos = rawPos;
+
+        return cv::Point(static_cast<int>(rawPos.x), static_cast<int>(rawPos.y));
+    } catch (const cv::Exception &) {
         return cv::Point(-1, -1);
-    }
-    catch (const std::exception&) {
-        // Silently fail on other errors
+    } catch (const std::exception &) {
         return cv::Point(-1, -1);
     }
 }
@@ -404,26 +443,22 @@ bool HandDetector::validateHandShape(const cv::Mat &roiFrame, cv::Point &handPos
     }
 }
 
-void HandDetector::setCalibrationImage(const cv::Mat &image)
-{
+void HandDetector::setCalibrationImage(const cv::Mat &image) {
     if (image.empty()) {
         qDebug() << "❌ Calibration image empty — skipping";
         return;
     }
-    
+
     qDebug() << "Setting primary calibration image:" << image.cols << "x" << image.rows 
              << "type:" << image.type() << "channels:" << image.channels();
-    
-    // OPTIMIZATION: Resize the calibration image to be smaller for faster matching
+
+    // Resize the calibration image to be smaller for faster matching
     cv::Mat resizedImage;
     cv::resize(image, resizedImage, cv::Size(), 0.5, 0.5, cv::INTER_LINEAR);
-    
-    // Make a persistent copy of the resized image
-    cv::Mat persistentCopy = resizedImage.clone();
-    
+
     // Ensure we have a proper BGR image for SIFT processing
+    cv::Mat persistentCopy = resizedImage.clone();
     if (persistentCopy.type() != CV_8UC3) {
-        qDebug() << "Converting image to 8UC3 format";
         cv::Mat tmp;
         if (persistentCopy.channels() == 1) {
             cv::cvtColor(persistentCopy, tmp, cv::COLOR_GRAY2BGR);
@@ -433,37 +468,45 @@ void HandDetector::setCalibrationImage(const cv::Mat &image)
             persistentCopy = tmp;
         }
     }
-    
+
     if (persistentCopy.empty()) {
         qDebug() << "❌ Failed to convert/copy calibration image";
         return;
     }
-    
-    // Verify SIFT can detect features in this image
+
+    // Detect and compute SIFT features for the calibration image
     cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
-    std::vector<cv::KeyPoint> keypoints;
-    cv::Mat descriptors;
-    
     try {
-        sift->detectAndCompute(persistentCopy, cv::noArray(), keypoints, descriptors);
-        qDebug() << "SIFT validation check: detected" << keypoints.size() << "keypoints in calibration image";
-        
-        if (keypoints.size() < 10) {
-            qDebug() << "⚠️ Warning: Few keypoints in calibration image, matching may be unreliable";
+        sift->detectAndCompute(persistentCopy, cv::noArray(), m_refKeypoints, m_refDescriptors);
+
+        // Validation checks
+        if (m_refKeypoints.empty() || m_refDescriptors.empty() || 
+            m_refDescriptors.rows != static_cast<int>(m_refKeypoints.size()) || 
+            m_refDescriptors.type() != CV_32F) {
+            qDebug() << "❌ Invalid SIFT descriptors or keypoints in calibration image";
+            m_refKeypoints.clear();
+            m_refDescriptors.release();
+            return;
         }
-    } catch (const cv::Exception& e) {
-        qDebug() << "❌ SIFT validation failed on calibration image:" << e.what();
+
+        // Fill m_refPoints from m_refKeypoints
+        m_refPoints.clear();
+        for (const auto &kp : m_refKeypoints) {
+            m_refPoints.push_back(kp.pt);
+        }
+    } catch (const cv::Exception &e) {
+        qDebug() << "❌ SIFT detection failed on calibration image:" << e.what();
         return;
     }
-    
-    // Store the image safely
+
+    // Store the calibration image
     QMutexLocker lock(&m_mutex);
     try {
-        persistentCopy.copyTo(m_calibrationImage);  // Deep copy under lock
+        persistentCopy.copyTo(m_calibrationImage);
         qDebug() << "✅ Primary calibration image set:" 
                  << m_calibrationImage.cols << "x" 
                  << m_calibrationImage.rows;
-    } catch (const cv::Exception& e) {
+    } catch (const cv::Exception &e) {
         qDebug() << "❌ Failed to set calibration image:" << e.what();
         m_calibrationImage.release();
     }
@@ -559,5 +602,36 @@ std::vector<cv::Point> HandDetector::getHandContour() const
 std::vector<cv::Vec4i> HandDetector::getConvexityDefects() const
 {
     return m_defects;
+}
+
+std::vector<cv::Point> HandDetector::getLastContour() const
+{
+    // Return the last detected contour (replace with actual logic)
+    return m_handContour; // Assuming `lastContour` is a member variable
+}
+
+std::vector<cv::Vec4i> HandDetector::getLastDefects() const
+{
+    // Return the last detected defects (replace with actual logic)
+    return m_defects; // Assuming `lastDefects` is a member variable
+}
+
+std::vector<cv::Point2f> HandDetector::getProjectedCorners() const {
+    // Return the projected corners of the homography quad
+    // Replace with actual logic if needed
+    return std::vector<cv::Point2f>{
+        cv::Point2f(0, 0),
+        cv::Point2f(100, 0),
+        cv::Point2f(100, 100),
+        cv::Point2f(0, 100)
+    };
+}
+
+const std::vector<cv::Point2f>& HandDetector::getLastInlierPoints() const {
+    return m_lastInlierPoints;
+}
+
+const cv::Point2f& HandDetector::getLastRawPos() const {
+    return m_lastRawPos;
 }
 

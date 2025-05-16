@@ -4,6 +4,7 @@
 #include <opencv2/opencv.hpp>
 #include <QMutex>
 #include <vector>
+#include <deque>
 
 class HandDetector {
 public:
@@ -23,15 +24,18 @@ public:
     // Get detected hand data for visualization
     std::vector<cv::Point> getHandContour() const;
     std::vector<cv::Vec4i> getConvexityDefects() const;
+    std::vector<cv::Point> getLastContour() const;
+    std::vector<cv::Vec4i> getLastDefects() const;
+    std::vector<cv::Point2f> getProjectedCorners() const; // Retrieve projected corners
 
-    // Set the calibration image (captured during calibration)
+    // Set calibration image(s)
     void setCalibrationImage(const cv::Mat &image);
-    
-    // Add a supplementary calibration image (for multi-position tracking)
     void addCalibrationImage(const cv::Mat &image);
-    
-    // Clear all calibration images except the primary one
     void clearSupplementaryCalibrations();
+
+    cv::Rect detectMotionROI(const cv::Mat &frame); // Ensure only one declaration exists
+    const std::vector<cv::Point2f>& getLastInlierPoints() const; // Getter for m_lastInlierPoints
+    const cv::Point2f& getLastRawPos() const; // Getter for m_lastRawPos
 
 private:
     // Detected hand data
@@ -48,7 +52,14 @@ private:
     std::vector<std::vector<cv::KeyPoint>> m_cachedRefKeypoints;
     std::vector<cv::Mat> m_cachedRefDescriptors;
     bool m_refFeaturesComputed;
-    
+
+    // Keypoints and descriptors for the calibration image
+    std::vector<cv::KeyPoint> m_refKeypoints;
+    cv::Mat m_refDescriptors;
+
+    // Plain‐vector of keypoint locations for homography
+    std::vector<cv::Point2f> m_refPoints;
+
     // Thread safety
     QMutex m_mutex;
     
@@ -72,9 +83,15 @@ private:
     const float RATIO_THRESHOLD = 0.75f;      // Ratio test threshold
     
     // Helper methods for improved detection
-    cv::Rect detectMotionROI(const cv::Mat &frame);
     cv::Point matchImageFLANN(const cv::Mat &refImage, const cv::Mat &frame, const cv::Rect &roi);
     bool validateHandShape(const cv::Mat &roiFrame, cv::Point &handPos);
+    cv::Point fallbackToORB(const cv::Mat &frame); // Fallback method for ORB-based matching
+
+    // Member variables for position smoothing and reporting
+    std::deque<cv::Point2f> m_posBuffer; // Circular buffer for smoothing hand position
+    cv::Point2f m_lastReported;         // Last reported smoothed position
+    std::vector<cv::Point2f> m_lastInlierPoints; // Store inlier points
+    cv::Point2f m_lastRawPos; // Store raw centroid position
 };
 
 #endif // HANDDETECTOR_H

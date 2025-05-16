@@ -5,6 +5,7 @@
 #include <QPainter>
 #include <QPen>
 #include <QFile> // Add this include for QFile::exists
+#include <algorithm> // For std::clamp
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -14,6 +15,8 @@ MainWindow::MainWindow(QWidget *parent)
     , handPosWidget(nullptr)
     , lastX(0.0f)  // Initialize lastX
     , lastY(0.0f)  // Initialize lastY
+    , m_isWarmingUp(false) // Initialize warmup flag
+    , m_warmupCount(0)     // Initialize warmup counter
 {
     // Now set up UI that uses handDetector
     setupUI();
@@ -308,14 +311,23 @@ void MainWindow::onCalibrationFinished()
                 << testFrame.cols << "x" << testFrame.rows;
     }
     
+    m_isWarmingUp = true;
+    m_warmupCount = 0;
+
+    // Flush 5 frames to avoid invalid frames
+    for (int i = 0; i < 5; ++i) {
+        cv::Mat tmp;
+        camera >> tmp;
+    }
+
     QMessageBox::information(this, "Calibration Complete",
                            "Hand calibration is complete. You can now start the game.");
     
     // Switch back to welcome screen
     mainStack->setCurrentWidget(welcomeScreen);
     
-    // Start the processing timer to process frames
-    processingTimer.start(16); // Target 60 FPS
+    // Add a delay before restarting the processing timer
+    QTimer::singleShot(200, [this]() { processingTimer.start(16); });
 }
 
 void MainWindow::startGame()
@@ -340,6 +352,15 @@ void MainWindow::exitGame()
 
 void MainWindow::processFrame()
 {
+    // Skip first few frames after calibration
+    if (m_isWarmingUp) {
+        if (++m_warmupCount < 10) {
+            return;
+        } else {
+            m_isWarmingUp = false;
+        }
+    }
+    
     if (!camera.isOpened()) {
         return;
     }
@@ -382,48 +403,81 @@ void MainWindow::processFrame()
     if (handPos.x >= 0 && handPos.y >= 0) {
         handDetected = true;
         mapHandToGameSpace(handPos, gameX, gameY);
-        
-        // Update game engine and widget with hand position
         gameEngine->updateHandPosition(QVector3D(gameX, gameY, 0.75f));
         gameWidget->setHandPosition(gameX, gameY);
-        
-        // OPTIMIZATION: Only draw tracking circle on display frames
-        // but don't modify the currentFrame otherwise
     }
-    
-    // OPTIMIZATION: Update display much less frequently (every 3rd frame)
+
     static int displayCounter = 0;
+    // ---------- declare once ----------
+    cv::Point2f rawPos = handDetector->getLastRawPos(); // Declare rawPos once
+
     if (++displayCounter % 3 == 0) {
-        // Create display copy with circle (don't modify currentFrame)
         cv::Mat displayFrame = currentFrame.clone();
-        
-        if (handDetected) {
-            // Draw hand position indicator
-            cv::circle(displayFrame, handPos, 10, cv::Scalar(0,255,0), -1);
+        std::vector<std::vector<cv::Point>> ctrs{ handDetector->getHandContour() };
+        cv::drawContours(displayFrame, ctrs, -1, cv::Scalar(0, 255, 0), 2);
+        cv::circle(displayFrame, rawPos, 5, cv::Scalar(0, 0, 255), -1);
+        for (auto &pt : handDetector->getLastInlierPoints()) {
+            cv::circle(displayFrame, pt, 3, cv::Scalar(255,0,0), -1);
         }
-        
-        // Convert frame to QImage with RGB conversion in one step
+
+        // Convert to QImage and update UI
         cv::Mat rgbFrame;
         cv::cvtColor(displayFrame, rgbFrame, cv::COLOR_BGR2RGB);
-        
-        // Create QImage without copying data (faster) - but we must use it before rgbFrame is modified
-        QImage qimg(rgbFrame.data, rgbFrame.cols, rgbFrame.rows,
-                    static_cast<int>(rgbFrame.step), QImage::Format_RGB888);
-        
-        // OPTIMIZATION: Create and scale QPixmap in one operation
-        QWidget* currentWidget = mainStack->currentWidget();
-        
-        // Skip updates when not needed
+        QImage qimg(rgbFrame.data, rgbFrame.cols, rgbFrame.rows, static_cast<int>(rgbFrame.step), QImage::Format_RGB888);
+
+        QWidget *currentWidget = mainStack->currentWidget();
         if (currentWidget == gameScreen) {
-            webcamFeedLabel->setPixmap(QPixmap::fromImage(qimg.scaled(
-                webcamFeedLabel->size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation)));
+            webcamFeedLabel->setPixmap(QPixmap::fromImage(qimg.scaled(webcamFeedLabel->size(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation)));
             updateHandVisualization(handVisualizationLabel, gameX, gameY, handDetected);
-        } 
-        else if (currentWidget == welcomeScreen && isCalibrated) {
-            welcomeCameraFeedLabel->setPixmap(QPixmap::fromImage(qimg.scaled(
-                welcomeCameraFeedLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)));
+        } else if (currentWidget == welcomeScreen && isCalibrated) {
+            welcomeCameraFeedLabel->setPixmap(QPixmap::fromImage(qimg.scaled(welcomeCameraFeedLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)));
             updateHandVisualization(welcomeHandVisLabel, gameX, gameY, handDetected);
         }
+    }
+
+    static cv::Point2f lastHandPos(-1, -1); // Initialize lastHandPos
+    rawPos = cv::Point2f(-1, -1); // if you need to reset it here instead of re-declaring
+    cv::Rect boundingRect; // Declare boundingRect
+    std::vector<cv::Point2f> projectedCorners; // Declare projectedCorners
+    cv::Mat displayFrame; // Declare displayFrame
+
+    if (handDetected) {
+        // Ensure rawPos is defined
+        cv::Point rawPos = handDetector->detectHand(currentFrame); // Ensure rawPos is defined
+
+        // Compute dead-zone smoothing on rawPos before exponential smoothing
+        float dx = std::abs(rawPos.x - lastHandPos.x);
+        float dy = std::abs(rawPos.y - lastHandPos.y);
+        if (dx < 5 && dy < 5) {
+            rawPos = lastHandPos;  // dead-zone under 5px
+        }
+
+        // Exponential smoothing α=0.3
+        cv::Point smoothedPos;
+        smoothedPos.x = int(0.3f * rawPos.x + 0.7f * lastHandPos.x);
+        smoothedPos.y = int(0.3f * rawPos.y + 0.7f * lastHandPos.y);
+        lastHandPos = smoothedPos;
+
+        // Draw the skin-mask bounding rectangle in semi-transparent green
+        cv::rectangle(displayFrame, boundingRect, cv::Scalar(0, 255, 0, 100), 2);
+
+        // Draw homography quad in blue
+        for (int i = 0; i < 4; ++i) {
+            cv::line(displayFrame,
+                     projectedCorners[i],
+                     projectedCorners[(i + 1) % 4],
+                     cv::Scalar(255, 0, 0), 2);
+        }
+
+        // Draw the smoothed hand position as a filled red circle
+        cv::circle(displayFrame, smoothedPos, 8, cv::Scalar(0, 0, 255), -1);
+
+        // Optionally draw the last detected contour hull in yellow
+        cv::drawContours(displayFrame,
+                         std::vector<std::vector<cv::Point>>{ handDetector->getLastContour() },
+                         -1,
+                         cv::Scalar(0, 255, 255),
+                         1);
     }
 }
 

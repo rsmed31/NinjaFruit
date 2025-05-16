@@ -96,6 +96,10 @@ private:
     // Smoothing variables
     float lastX;  // Last valid X position for smoothing
     float lastY;  // Last valid Y position for smoothing
+
+    // Warmup variables
+    bool m_isWarmingUp; // Indicates if the camera is warming up
+    int m_warmupCount;  // Counts the number of frames skipped during warmup
     
     // Methods
     void setupUI();
