@@ -433,51 +433,8 @@ void MainWindow::processFrame()
             welcomeCameraFeedLabel->setPixmap(QPixmap::fromImage(qimg.scaled(welcomeCameraFeedLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)));
             updateHandVisualization(welcomeHandVisLabel, gameX, gameY, handDetected);
         }
-    }
 
-    static cv::Point2f lastHandPos(-1, -1); // Initialize lastHandPos
-    rawPos = cv::Point2f(-1, -1); // if you need to reset it here instead of re-declaring
-    cv::Rect boundingRect; // Declare boundingRect
-    std::vector<cv::Point2f> projectedCorners; // Declare projectedCorners
-    cv::Mat displayFrame; // Declare displayFrame
-
-    if (handDetected) {
-        // Ensure rawPos is defined
-        cv::Point rawPos = handDetector->detectHand(currentFrame); // Ensure rawPos is defined
-
-        // Compute dead-zone smoothing on rawPos before exponential smoothing
-        float dx = std::abs(rawPos.x - lastHandPos.x);
-        float dy = std::abs(rawPos.y - lastHandPos.y);
-        if (dx < 5 && dy < 5) {
-            rawPos = lastHandPos;  // dead-zone under 5px
-        }
-
-        // Exponential smoothing α=0.3
-        cv::Point smoothedPos;
-        smoothedPos.x = int(0.3f * rawPos.x + 0.7f * lastHandPos.x);
-        smoothedPos.y = int(0.3f * rawPos.y + 0.7f * lastHandPos.y);
-        lastHandPos = smoothedPos;
-
-        // Draw the skin-mask bounding rectangle in semi-transparent green
-        cv::rectangle(displayFrame, boundingRect, cv::Scalar(0, 255, 0, 100), 2);
-
-        // Draw homography quad in blue
-        for (int i = 0; i < 4; ++i) {
-            cv::line(displayFrame,
-                     projectedCorners[i],
-                     projectedCorners[(i + 1) % 4],
-                     cv::Scalar(255, 0, 0), 2);
-        }
-
-        // Draw the smoothed hand position as a filled red circle
-        cv::circle(displayFrame, smoothedPos, 8, cv::Scalar(0, 0, 255), -1);
-
-        // Optionally draw the last detected contour hull in yellow
-        cv::drawContours(displayFrame,
-                         std::vector<std::vector<cv::Point>>{ handDetector->getLastContour() },
-                         -1,
-                         cv::Scalar(0, 255, 255),
-                         1);
+        return; // <<< Prevent crashing on uninitialized displayFrame >>>
     }
 }
 

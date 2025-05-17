@@ -66,145 +66,108 @@ cv::Point HandDetector::fallbackToORB(const cv::Mat &frame) {
 }
 
 cv::Point HandDetector::detectHand(const cv::Mat &frame) {
-    if (frame.empty() || m_calibrationImage.empty()) {
-        return fallbackToORB(frame); // Use fallback if frame or calibration image is empty
-    }
-
+    if (frame.empty() || m_calibrationImage.empty())
+        return fallbackToORB(frame);
     QMutexLocker lock(&m_mutex);
 
-    // Convert frame to HSV and threshold to a skin mask
-    cv::Mat hsvFrame, skinMask;
-    cv::cvtColor(frame, hsvFrame, cv::COLOR_BGR2HSV);
-    cv::inRange(hsvFrame, cv::Scalar(0, 30, 60), cv::Scalar(20, 150, 255), skinMask);
-    cv::morphologyEx(skinMask, skinMask, cv::MORPH_OPEN, cv::Mat(), cv::Point(-1, -1), 2);
-    cv::morphologyEx(skinMask, skinMask, cv::MORPH_CLOSE, cv::Mat(), cv::Point(-1, -1), 2);
+    // 1. Skin segmentation
+    const cv::Scalar lower(0, 30, 60), upper(20, 150, 255);
+    cv::Mat hsv, mask;
+    cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);
+    cv::inRange(hsv, lower, upper, mask);
+    cv::morphologyEx(mask, mask, cv::MORPH_OPEN, cv::Mat(), cv::Point(-1,-1), 2);
+    cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, cv::Mat(), cv::Point(-1,-1), 2);
 
-    int nonZeroPixels = cv::countNonZero(skinMask);
-    qDebug() << "Skin mask non-zero pixels:" << nonZeroPixels;
-
-    // Find the largest skin-blob contour
-    std::vector<std::vector<cv::Point>> contours;
-    cv::findContours(skinMask, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-
-    cv::Rect boundingRect(0, 0, frame.cols, frame.rows); // Default to full frame
-    if (!contours.empty()) {
-        auto largestContour = *std::max_element(contours.begin(), contours.end(),
-            [](const std::vector<cv::Point>& a, const std::vector<cv::Point>& b) {
-                return cv::contourArea(a) < cv::contourArea(b);
-            });
-
-        double largestArea = cv::contourArea(largestContour);
-        qDebug() << "Largest contour area:" << largestArea;
-
-        if (largestArea >= 1000) {
-            boundingRect = cv::boundingRect(largestContour);
-
-            // Expand boundingRect by 20% in each direction
-            int paddingX = static_cast<int>(boundingRect.width * 0.2);
-            int paddingY = static_cast<int>(boundingRect.height * 0.2);
-            boundingRect.x = std::max(0, boundingRect.x - paddingX);
-            boundingRect.y = std::max(0, boundingRect.y - paddingY);
-            boundingRect.width = std::min(frame.cols - boundingRect.x, boundingRect.width + 2 * paddingX);
-            boundingRect.height = std::min(frame.rows - boundingRect.y, boundingRect.height + 2 * paddingY);
-        } else {
-            qDebug() << "Contour area too small, falling back to full frame.";
+    // 2. Contour + hull centroid
+    std::vector<std::vector<cv::Point>> ctrs;
+    cv::findContours(mask, ctrs, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    double maxA=0; int idx=-1;
+    for (int i=0; i<(int)ctrs.size(); ++i) {
+        double a=cv::contourArea(ctrs[i]);
+        if (a>maxA) { maxA=a; idx=i; }
+    }
+    cv::Point2f hullCentroid(-1,-1);
+    std::vector<cv::Point> largest = (idx>=0 && maxA>1000) ? ctrs[idx] : std::vector<cv::Point>();
+    if (!largest.empty()) {
+        // centroid of contour
+        for (auto& p: largest) hullCentroid += cv::Point2f(p);
+        hullCentroid *= (1.f/(float)largest.size());
+        // convex defects
+        std::vector<int> hullIdx; cv::convexHull(largest, hullIdx, false);
+        if (hullIdx.size()>3) {
+            std::vector<cv::Vec4i> defects;
+            cv::convexityDefects(largest, hullIdx, defects);
+            int cnt=0;
+            for (auto& d: defects) if (d[3]/256.0f>10.0f) ++cnt;
+            if (cnt<2) hullCentroid = cv::Point2f(-1,-1);
         }
-    } else {
-        qDebug() << "No contours found, falling back to full frame.";
     }
 
-    // Ensure m_posBuffer and m_lastReported are initialized
-    if (m_posBuffer.empty()) {
-        m_lastReported = cv::Point2f(-1, -1);
-    }
+    // 3. ROI
+    cv::Rect roi = (largest.empty())
+        ? cv::Rect(0,0,frame.cols,frame.rows)
+        : cv::boundingRect(largest);
+    int padX=roi.width/5, padY=roi.height/5;
+    roi.x = std::max(0, roi.x-padX);
+    roi.y = std::max(0, roi.y-padY);
+    roi.width = std::min(frame.cols-roi.x, roi.width+2*padX);
+    roi.height= std::min(frame.rows-roi.y, roi.height+2*padY);
 
-    // Extract SIFT keypoints and descriptors within the ROI
-    cv::Mat roiFrame = frame(boundingRect);
-    std::vector<cv::KeyPoint> keypointsFrame;
-    cv::Mat descriptorsFrame;
+    // 4. SIFT + FLANN matching
+    cv::Mat rf = frame(roi), descF;
+    std::vector<cv::KeyPoint> kf;
     cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
-    sift->detectAndCompute(roiFrame, cv::noArray(), keypointsFrame, descriptorsFrame);
-
-    if (descriptorsFrame.empty()) {
-        return fallbackToORB(frame);
-    }
-
-    // Declare and initialize matcher (e.g., using BFMatcher with default parameters)
-    cv::BFMatcher matcher(cv::NORM_L2, true); // Adjust parameters as needed
-
-    // Prepare for matched points only
-    std::vector<cv::Point2f> pointsRef;
-    std::vector<cv::Point2f> pointsFrame;
-    std::vector<std::vector<cv::DMatch>> knnMatches;
-    matcher.knnMatch(m_refDescriptors, descriptorsFrame, knnMatches, 2);
-
-    for (const auto &match : knnMatches) {
-        if (match.size() >= 2 && match[0].distance < 0.8f * match[1].distance) {
-            pointsRef.push_back(m_refPoints[match[0].queryIdx]);
-            pointsFrame.push_back(keypointsFrame[match[0].trainIdx].pt + cv::Point2f(boundingRect.x, boundingRect.y));
+    sift->detectAndCompute(rf, cv::noArray(), kf, descF);
+    if (descF.empty()) return fallbackToORB(frame);
+    cv::FlannBasedMatcher matcher(
+        cv::makePtr<cv::flann::KDTreeIndexParams>(4),
+        cv::makePtr<cv::flann::SearchParams>(64)
+    );
+    std::vector<std::vector<cv::DMatch>> knn;
+    matcher.knnMatch(m_refDescriptors, descF, knn, 2);
+    std::vector<cv::Point2f> ptsRef, ptsFrame;
+    for (auto& m: knn) {
+        if (m.size()==2 && m[0].distance < RATIO_THRESHOLD*m[1].distance) {
+            ptsRef.emplace_back(m_refPoints[m[0].queryIdx]);
+            auto pt = kf[m[0].trainIdx].pt + cv::Point2f((float)roi.x, (float)roi.y);
+            ptsFrame.push_back(pt);
         }
     }
-    qDebug() << "✅ Good matches found:" << pointsRef.size();
-
-    if (pointsFrame.size() < 4 || pointsRef.size() != pointsFrame.size()) {
-        qDebug() << "❌ Not enough good matches or mismatched sizes.";
-        return fallbackToORB(frame);
-    }
-
-    // Clear inlier points before pushing new ones
-    m_lastInlierPoints.clear();
-
-    // Find homography and filter inliers
-    cv::Mat inliersMask;
-    cv::Mat H = cv::findHomography(m_refPoints, pointsFrame, cv::RANSAC, 3.0, inliersMask);
-    if (H.empty() || cv::countNonZero(inliersMask) < 4) {
-        return fallbackToORB(frame);
-    }
-
-    // Compute raw position as the mean of inlier points
-    cv::Point2f rawPos(0, 0);
-    int inlierCount = 0;
-    for (size_t i = 0; i < pointsFrame.size(); ++i) {
-        if (inliersMask.at<uchar>(i)) {
-            rawPos += pointsFrame[i];
-            ++inlierCount;
+    if (ptsFrame.size()<4) return fallbackToORB(frame);
+    // 5. RANSAC homography → siftCentroid
+    cv::Mat inlMask;
+    cv::Mat H = cv::findHomography(ptsRef, ptsFrame, cv::RANSAC, 3.0, inlMask);
+    if (H.empty()) return fallbackToORB(frame);
+    cv::Point2f siftC(0,0); int inlCount=0;
+    for (int i=0; i<(int)ptsFrame.size(); ++i) {
+        if (inlMask.at<uchar>(i)) {
+            siftC += ptsFrame[i]; ++inlCount;
+            m_lastInlierPoints.push_back(ptsFrame[i]);
         }
     }
-    if (inlierCount > 0) {
-        rawPos.x /= inlierCount;
-        rawPos.y /= inlierCount;
-    }
+    if (inlCount==0) return fallbackToORB(frame);
+    siftC *= (1.f/inlCount);
+    m_lastRawPos = siftC;
 
-    // Store rawPos in a circular buffer
-    m_posBuffer.push_back(rawPos);
-    if (m_posBuffer.size() > 5) {
-        m_posBuffer.pop_front();
-    }
+    // 6. Fusion & smoothing
+    float alpha = 0.7f;
+    cv::Point2f raw = (hullCentroid.x>=0)
+        ? alpha*siftC + (1-alpha)*hullCentroid
+        : siftC;
+    m_posBuffer.push_back(raw);
+    if (m_posBuffer.size()>5) m_posBuffer.pop_front();
+    cv::Point2f buf(0,0);
+    for (auto& p: m_posBuffer) buf += p;
+    buf *= (1.f/m_posBuffer.size());
+    // dead-zone
+    if (std::abs(buf.x-m_lastReported.x)<5 && std::abs(buf.y-m_lastReported.y)<5)
+        buf = m_lastReported;
+    // clamp
+    buf.x = std::clamp(buf.x, 0.f, (float)frame.cols);
+    buf.y = std::clamp(buf.y, 0.f, (float)frame.rows);
+    m_lastReported = buf;
 
-    // Compute buffer position as the mean of the buffer
-    cv::Point2f bufferPos(0, 0);
-    for (const auto &pos : m_posBuffer) {
-        bufferPos += pos;
-    }
-    bufferPos.x /= m_posBuffer.size();
-    bufferPos.y /= m_posBuffer.size();
-
-    // Apply dead-band logic
-    if (std::abs(bufferPos.x - m_lastReported.x) > 20 || std::abs(bufferPos.y - m_lastReported.y) > 20) {
-        bufferPos = m_lastReported;
-    }
-
-    m_lastReported = bufferPos;
-
-    // Store inlier points for visualization
-    m_lastInlierPoints.clear();
-    for (size_t i = 0; i < pointsFrame.size(); ++i) {
-        if (inliersMask.at<uchar>(i)) {
-            m_lastInlierPoints.push_back(pointsFrame[i]);
-        }
-    }
-
-    return cv::Point(static_cast<int>(bufferPos.x), static_cast<int>(bufferPos.y));
+    return cv::Point((int)buf.x, (int)buf.y);
 }
 
 cv::Rect HandDetector::detectMotionROI(const cv::Mat &frame)
