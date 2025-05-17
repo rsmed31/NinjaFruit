@@ -66,108 +66,127 @@ cv::Point HandDetector::fallbackToORB(const cv::Mat &frame) {
 }
 
 cv::Point HandDetector::detectHand(const cv::Mat &frame) {
-    if (frame.empty() || m_calibrationImage.empty())
-        return fallbackToORB(frame);
+    if (frame.empty()) 
+        return {-1, -1};
+
     QMutexLocker lock(&m_mutex);
 
-    // 1. Skin segmentation
-    const cv::Scalar lower(0, 30, 60), upper(20, 150, 255);
+    // 1. HSV skin segmentation
     cv::Mat hsv, mask;
     cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);
-    cv::inRange(hsv, lower, upper, mask);
-    cv::morphologyEx(mask, mask, cv::MORPH_OPEN, cv::Mat(), cv::Point(-1,-1), 2);
+    cv::inRange(hsv, cv::Scalar(0,  30,  60),
+                      cv::Scalar(20, 150, 255),
+                mask);
+    cv::morphologyEx(mask, mask, cv::MORPH_OPEN,  cv::Mat(), cv::Point(-1,-1), 2);
     cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, cv::Mat(), cv::Point(-1,-1), 2);
 
-    // 2. Contour + hull centroid
-    std::vector<std::vector<cv::Point>> ctrs;
-    cv::findContours(mask, ctrs, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-    double maxA=0; int idx=-1;
-    for (int i=0; i<(int)ctrs.size(); ++i) {
-        double a=cv::contourArea(ctrs[i]);
-        if (a>maxA) { maxA=a; idx=i; }
+    // 2. Largest contour + convex‐defect validation
+    std::vector<std::vector<cv::Point>> cnts;
+    cv::findContours(mask, cnts, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+    double bestA = 0; int bestI = -1;
+    for (int i = 0; i < (int)cnts.size(); ++i) {
+        double a = cv::contourArea(cnts[i]);
+        if (a > bestA) { bestA = a; bestI = i; }
     }
-    cv::Point2f hullCentroid(-1,-1);
-    std::vector<cv::Point> largest = (idx>=0 && maxA>1000) ? ctrs[idx] : std::vector<cv::Point>();
-    if (!largest.empty()) {
-        // centroid of contour
-        for (auto& p: largest) hullCentroid += cv::Point2f(p);
-        hullCentroid *= (1.f/(float)largest.size());
-        // convex defects
-        std::vector<int> hullIdx; cv::convexHull(largest, hullIdx, false);
-        if (hullIdx.size()>3) {
-            std::vector<cv::Vec4i> defects;
-            cv::convexityDefects(largest, hullIdx, defects);
-            int cnt=0;
-            for (auto& d: defects) if (d[3]/256.0f>10.0f) ++cnt;
-            if (cnt<2) hullCentroid = cv::Point2f(-1,-1);
+    cv::Point2f hullCentroid(-1, -1);
+    bool hullValid = false;
+    if (bestI >= 0 && bestA > 1000) {
+        auto &c = cnts[bestI];
+        // centroid via moments
+        cv::Moments mo = cv::moments(c);
+        hullCentroid = { float(mo.m10/mo.m00), float(mo.m01/mo.m00) };
+        // convexity defects
+        std::vector<int> hIdx;
+        cv::convexHull(c, hIdx, false);
+        if (hIdx.size() > 3) {
+            std::vector<cv::Vec4i> defs;
+            cv::convexityDefects(c, hIdx, defs);
+            int dc = 0;
+            for (auto &d: defs) if (d[3]/256.0f > 10.0f) ++dc;
+            hullValid = (dc >= 2);
         }
     }
 
-    // 3. ROI
-    cv::Rect roi = (largest.empty())
-        ? cv::Rect(0,0,frame.cols,frame.rows)
-        : cv::boundingRect(largest);
-    int padX=roi.width/5, padY=roi.height/5;
-    roi.x = std::max(0, roi.x-padX);
-    roi.y = std::max(0, roi.y-padY);
-    roi.width = std::min(frame.cols-roi.x, roi.width+2*padX);
-    roi.height= std::min(frame.rows-roi.y, roi.height+2*padY);
+    // 3. Define padded ROI
+    cv::Rect roi;
+    if (bestI >= 0) {
+        roi = cv::boundingRect(cnts[bestI]);
+        int px = roi.width/5, py = roi.height/5;
+        roi.x      = std::max(0, roi.x - px);
+        roi.y      = std::max(0, roi.y - py);
+        roi.width  = std::min(frame.cols - roi.x, roi.width + 2*px);
+        roi.height = std::min(frame.rows - roi.y, roi.height + 2*py);
+    } else {
+        roi = {0, 0, frame.cols, frame.rows};
+    }
 
-    // 4. SIFT + FLANN matching
-    cv::Mat rf = frame(roi), descF;
-    std::vector<cv::KeyPoint> kf;
+    // 4–6. SIFT + FLANN knnMatch + RANSAC → siftCentroid
+    cv::Mat roiImg = frame(roi), desc;
+    std::vector<cv::KeyPoint> kpts;
     cv::Ptr<cv::SIFT> sift = cv::SIFT::create();
-    sift->detectAndCompute(rf, cv::noArray(), kf, descF);
-    if (descF.empty()) return fallbackToORB(frame);
+    sift->detectAndCompute(roiImg, cv::noArray(), kpts, desc);
+    if (desc.empty()) return {-1, -1};
+
     cv::FlannBasedMatcher matcher(
         cv::makePtr<cv::flann::KDTreeIndexParams>(4),
         cv::makePtr<cv::flann::SearchParams>(64)
     );
     std::vector<std::vector<cv::DMatch>> knn;
-    matcher.knnMatch(m_refDescriptors, descF, knn, 2);
-    std::vector<cv::Point2f> ptsRef, ptsFrame;
-    for (auto& m: knn) {
-        if (m.size()==2 && m[0].distance < RATIO_THRESHOLD*m[1].distance) {
-            ptsRef.emplace_back(m_refPoints[m[0].queryIdx]);
-            auto pt = kf[m[0].trainIdx].pt + cv::Point2f((float)roi.x, (float)roi.y);
-            ptsFrame.push_back(pt);
+    matcher.knnMatch(m_refDescriptors, desc, knn, 2);
+
+    std::vector<cv::Point2f> refPts, frmPts;
+    for (auto &m: knn) {
+        if (m.size()==2 && m[0].distance < 0.75f*m[1].distance) {
+            refPts.push_back(m_refPoints[m[0].queryIdx]);
+            frmPts.push_back(kpts[m[0].trainIdx].pt + cv::Point2f(roi.x, roi.y));
         }
     }
-    if (ptsFrame.size()<4) return fallbackToORB(frame);
-    // 5. RANSAC homography → siftCentroid
+    if (frmPts.size() < 4) 
+        return {-1, -1};
+
     cv::Mat inlMask;
-    cv::Mat H = cv::findHomography(ptsRef, ptsFrame, cv::RANSAC, 3.0, inlMask);
-    if (H.empty()) return fallbackToORB(frame);
-    cv::Point2f siftC(0,0); int inlCount=0;
-    for (int i=0; i<(int)ptsFrame.size(); ++i) {
+    cv::Mat H = cv::findHomography(refPts, frmPts, cv::RANSAC, 3.0, inlMask);
+    if (H.empty()) 
+        return {-1, -1};
+
+    cv::Point2f siftCent(0,0); int inlCount = 0;
+    m_lastInlierPoints.clear();
+    for (int i = 0; i < (int)frmPts.size(); ++i) {
         if (inlMask.at<uchar>(i)) {
-            siftC += ptsFrame[i]; ++inlCount;
-            m_lastInlierPoints.push_back(ptsFrame[i]);
+            siftCent += frmPts[i];
+            ++inlCount;
+            m_lastInlierPoints.push_back(frmPts[i]);
         }
     }
-    if (inlCount==0) return fallbackToORB(frame);
-    siftC *= (1.f/inlCount);
-    m_lastRawPos = siftC;
+    if (!inlCount) 
+        return {-1, -1};
+    siftCent *= (1.f/inlCount);
+    m_lastRawPos = siftCent;
 
-    // 6. Fusion & smoothing
-    float alpha = 0.7f;
-    cv::Point2f raw = (hullCentroid.x>=0)
-        ? alpha*siftC + (1-alpha)*hullCentroid
-        : siftC;
+    // 7. Fuse SIFT & hull
+    cv::Point2f raw = hullValid
+        ? (0.7f*siftCent + 0.3f*hullCentroid)
+        : siftCent;
+
+    // 8. Temporal smoothing via circular buffer
     m_posBuffer.push_back(raw);
-    if (m_posBuffer.size()>5) m_posBuffer.pop_front();
-    cv::Point2f buf(0,0);
-    for (auto& p: m_posBuffer) buf += p;
-    buf *= (1.f/m_posBuffer.size());
-    // dead-zone
-    if (std::abs(buf.x-m_lastReported.x)<5 && std::abs(buf.y-m_lastReported.y)<5)
-        buf = m_lastReported;
-    // clamp
-    buf.x = std::clamp(buf.x, 0.f, (float)frame.cols);
-    buf.y = std::clamp(buf.y, 0.f, (float)frame.rows);
-    m_lastReported = buf;
+    if (m_posBuffer.size() > 5) 
+        m_posBuffer.pop_front();
+    cv::Point2f avg(0,0);
+    for (auto &p : m_posBuffer) 
+        avg += p;
+    avg *= (1.f/m_posBuffer.size());
 
-    return cv::Point((int)buf.x, (int)buf.y);
+    // dead‐zone threshold
+    if (cv::norm(avg - m_lastReported) < 5.0f) 
+        avg = m_lastReported;
+
+    // 9. Clamp to image bounds
+    avg.x = std::clamp(avg.x, 0.f, float(frame.cols));
+    avg.y = std::clamp(avg.y, 0.f, float(frame.rows));
+    m_lastReported = avg;
+
+    return cv::Point(int(avg.x), int(avg.y));
 }
 
 cv::Rect HandDetector::detectMotionROI(const cv::Mat &frame)

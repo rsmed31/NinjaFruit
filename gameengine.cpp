@@ -34,6 +34,9 @@ GameEngine::GameEngine(QObject *parent)
     m_gameTimer.setInterval(16);      // ~60 FPS
     m_spawnTimer.setInterval(2000);   // 2 seconds between projectiles
     m_gameClockTimer.setInterval(1000); // 1 second for game clock
+
+    // Pre-allocate pool capacity
+    m_projectilePool.reserve(50);
 }
 
 GameEngine::~GameEngine()
@@ -128,9 +131,22 @@ void GameEngine::updateGame()
 
 void GameEngine::spawnProjectile()
 {
-    Projectile projectile = createRandomProjectile();
-    m_projectiles.append(projectile);
-    emit projectileAdded(projectile);
+    // 1) get a Projectile instance (reuse or fresh)
+    Projectile proj = m_projectilePool.isEmpty()
+                      ? Projectile(Projectile::CYLINDER) // default type; will override
+                      : m_projectilePool.takeLast();
+
+    // 2) re-init it
+    int randomType = QRandomGenerator::global()->bounded(4);
+    Projectile::Type type = static_cast<Projectile::Type>(randomType);
+    proj = Projectile(type);                     // reset type, color, id
+    proj.setPosition(generateRandomLaunchPosition());
+    proj.setVelocity(generateRandomVelocity());
+    proj.setCreationTime(m_elapsedTime);
+
+    // 3) publish and add to active list
+    m_projectiles.append(proj);
+    emit projectileAdded(proj);
 }
 
 void GameEngine::checkCollisions()
@@ -182,38 +198,35 @@ void GameEngine::checkCollisions()
 
 void GameEngine::updateProjectiles(float deltaTime)
 {
-    QList<int> toRemove;
-    for (int i = 0; i < m_projectiles.size(); ++i) {
-        Projectile& proj = m_projectiles[i];
-        proj.update(deltaTime);
+    // Update each, then recycle any that go inactive or out-of-bounds.
+    for (int i = m_projectiles.size() - 1; i >= 0; --i) {
+        Projectile &p = m_projectiles[i];
+        p.update(deltaTime);
 
-        if (proj.getPosition().z() >= 15.0f) {
-            if (proj.getState() == Projectile::ACTIVE && 
-                !proj.wasSliced() && !proj.wasProcessed()) {
+        bool expired = false;
+        // off top/back
+        if (p.getPosition().z() >= 15.0f) expired = true;
+        // below floor
+        if (p.getPosition().y() < -0.1f && p.getState() != Projectile::ACTIVE)
+            expired = true;
+
+        if (expired) {
+            // emit lives-penalty if needed (existing logic)
+            if (p.getState() == Projectile::ACTIVE && !p.wasProcessed()) {
                 m_lives = qMax(0, m_lives - 1);
                 emit livesChanged(m_lives);
-                proj.markAsProcessed();
-                proj.split();
-
+                p.markAsProcessed();
+                p.split();
                 if (m_lives <= 0) {
                     pauseGame();
                     emit gameOver(m_score);
-                    break;
                 }
             }
-            toRemove.append(i);
-            continue;
+            // recycle instance into pool
+            m_projectilePool.append(p);
+            // remove from active list
+            m_projectiles.removeAt(i);
         }
-
-        if (proj.getState() == Projectile::INACTIVE || proj.getState() == Projectile::SPLIT) {
-            toRemove.append(i);
-        }
-    }
-
-    std::sort(toRemove.begin(), toRemove.end(), std::greater<int>());
-    for (int idx : toRemove) {
-        emit projectileRemoved(m_projectiles[idx].getId());
-        m_projectiles.removeAt(idx);
     }
 }
 

@@ -96,7 +96,8 @@ private:
     } m_launchZone;
     
     // Projectiles
-    QList<Projectile> m_projectiles; // List of projectiles
+    QList<Projectile> m_projectiles;                // Active list
+    QList<Projectile> m_projectilePool;             // ← pool for reuse
     QList<ProjectileRenderData> m_projectileRenderData; // List to store render data
     QSet<int> m_slicedProjectiles; // Track sliced projectiles by ID
     
