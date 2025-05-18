@@ -87,6 +87,7 @@ private:
     QVector3D m_handPosition;
     QVector3D m_swordHandle;
     QVector3D m_swordTip;
+
     
     // Launch parameters
     struct LaunchZone {

@@ -14,32 +14,57 @@ CalibrationWidget::CalibrationWidget(QWidget *parent, HandDetector* handDetector
     , m_multiPositionEnabled(false)
     , m_supplementaryPositionsCount(0)
 {
-    // Add verification that handDetector is valid
-    if (!m_handDetector) {
-        qDebug() << "❌ WARNING: CalibrationWidget created with NULL handDetector!";
-    } else {
-        qDebug() << "✅ CalibrationWidget created with valid handDetector";
-    }
-    
     // Use horizontal layout: left for camera view, right for instructions and button.
     QHBoxLayout* mainLayout = new QHBoxLayout(this);
     
     // Left side: will show the camera feed (drawn in paintEvent)
     QWidget* cameraArea = new QWidget(this);
     cameraArea->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    cameraArea->setStyleSheet("background: transparent;");   // make it transparent
     
     // Right side: vertical layout with instructions and capture button.
     QWidget* instructionArea = new QWidget(this);
     instructionArea->setFixedWidth(300);
+    instructionArea->setStyleSheet("border: 2px solid #533483; border-radius: 10px; background: #16213e;");
+    
     QVBoxLayout* instLayout = new QVBoxLayout(instructionArea);
+    instLayout->setContentsMargins(20, 20, 20, 20); // Increased margins
+    instLayout->setSpacing(15); // Increased spacing
+    
+    // Create font for labels
+    QFont labelFont("Arial", 14, QFont::Bold);
+    
     m_instructionLabel = new QLabel("Place your hand inside the red square and press Capture");
     m_instructionLabel->setAlignment(Qt::AlignCenter);
-    m_instructionLabel->setStyleSheet("background-color: rgba(0,0,0,128); color: white; padding: 5px;");
+    m_instructionLabel->setStyleSheet("color: white; padding: 5px;");
+    m_instructionLabel->setFont(labelFont);
+    
     m_statusLabel = new QLabel("Calibration Phase 1/1");
     m_statusLabel->setAlignment(Qt::AlignCenter);
-    m_statusLabel->setStyleSheet("background-color: rgba(0,0,0,128); color: white; padding: 5px;");
+    m_statusLabel->setStyleSheet("color: white; padding: 5px;");
+    m_statusLabel->setFont(labelFont);
+    
+    // Define button style
+    QString buttonStyle = "QPushButton {"
+                          "    background-color: #0f3460;"
+                          "    color: white;"
+                          "    border-radius: 10px;"
+                          "    padding: 15px;"
+                          "    font-size: 16px;"
+                          "    font-weight: bold;"
+                          "}"
+                          "QPushButton:hover {"
+                          "    background-color: #e94560;"
+                          "}"
+                          "QPushButton:pressed {"
+                          "    background-color: #533483;"
+                          "}";
+    
     m_captureButton = new QPushButton("Capture Position");
+    m_captureButton->setMinimumHeight(50);
+    m_captureButton->setStyleSheet(buttonStyle);
     connect(m_captureButton, &QPushButton::clicked, this, &CalibrationWidget::captureCalibrationPoint);
+    
     instLayout->addWidget(m_instructionLabel);
     instLayout->addWidget(m_statusLabel);
     instLayout->addWidget(m_captureButton);
@@ -47,6 +72,8 @@ CalibrationWidget::CalibrationWidget(QWidget *parent, HandDetector* handDetector
 
     // Add a new button for supplementary calibration points
     m_captureSupplementaryButton = new QPushButton("Capture Additional Position");
+    m_captureSupplementaryButton->setMinimumHeight(50);
+    m_captureSupplementaryButton->setStyleSheet(buttonStyle);
     m_captureSupplementaryButton->setVisible(false); // Hidden by default
     connect(m_captureSupplementaryButton, &QPushButton::clicked, 
             this, &CalibrationWidget::captureSupplementaryCalibrationPoint);

@@ -494,7 +494,7 @@ void MainWindow::mapHandToGameSpace(const cv::Point& handPos, float& gameX, floa
     float normY = handPos.y / static_cast<float>(currentFrame.rows);
     
     // Linear mapping: normX=0→-8, normX=1→+8
-    gameX = (normX - 0.5f) * 16.0f;
+    gameX = (normX - 0.5f) * 12.0f;
     
     // Invert Y so camera/top corresponds to game/top
     gameY = (1.0f - normY) * 10.0f;
@@ -507,7 +507,7 @@ void MainWindow::mapHandToGameSpace(const cv::Point& handPos, float& gameX, floa
     lastY = gameY;
     
     // Full extents of gameplay area
-    gameX = qBound(-8.0f, gameX, 8.0f);
+    gameX = qBound(-6.0f, gameX, 6.0f);
     gameY = qBound(0.0f, gameY, 10.0f);
 }
 
