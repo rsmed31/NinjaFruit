@@ -411,7 +411,7 @@ void MainWindow::processFrame()
     // ---------- declare once ----------
     cv::Point2f rawPos = handDetector->getLastRawPos(); // Declare rawPos once
 
-    if (++displayCounter % 3 == 0) {
+    if (++displayCounter % 2 == 0) {
         cv::Mat displayFrame = currentFrame.clone();
         std::vector<std::vector<cv::Point>> ctrs{ handDetector->getHandContour() };
         cv::drawContours(displayFrame, ctrs, -1, cv::Scalar(0, 255, 0), 2);
