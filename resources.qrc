@@ -5,4 +5,7 @@
         <file>textures/cube.png</file>
         <file>textures/pyramid.jpg</file>
     </qresource>
+    <qresource prefix="/">
+       <file>image/logo.png</file>
+    </qresource>
 </RCC>
