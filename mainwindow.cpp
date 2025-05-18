@@ -70,7 +70,14 @@ void MainWindow::setupUI()
     QVBoxLayout* welcomeLayout = new QVBoxLayout(welcomeScreen);
     welcomeLayout->setContentsMargins(40, 40, 40, 40); // More spacing for elegance
     
-    QLabel* titleLabel = new QLabel("Ninja Fruit");
+    // Add logo above the title
+    QLabel* logoLabel = new QLabel();
+    QPixmap logoPix(":/image/logo.png");
+    logoLabel->setPixmap(logoPix.scaled(80, 80, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    logoLabel->setAlignment(Qt::AlignCenter);
+    welcomeLayout->addWidget(logoLabel);
+
+    QLabel* titleLabel = new QLabel("Shape Shredder");
     titleLabel->setAlignment(Qt::AlignCenter);
     QFont titleFont("Arial", 48, QFont::Bold);
     titleLabel->setFont(titleFont);
