@@ -121,7 +121,6 @@ private:
     
     // Physics
     void updateProjectilePositions();
-    QVector3D calculateProjectilePosition(const ProjectileRenderData& proj, float time);
     
     // OpenGL resources
     QOpenGLShaderProgram* m_program;
@@ -132,13 +131,8 @@ private:
     // Draw the hit cylinder
     void drawHitCylinder();
     
-    // Spawn projectiles that will pass through the hit zone
-    void configureProjectileTrajectory(ProjectileRenderData& projectile);
-    
     // Check collision between hand and projectiles within hit zone
     void checkHitZoneCollisions();
-
-    float getProjectileCollisionRadius(ProjectileRenderData::Type type) const;
 };
 
 #endif // GAMEWIDGET_H

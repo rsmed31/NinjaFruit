@@ -7,7 +7,8 @@ extern "C"
 #include <QtMath>
 #include <QDateTime>
 #include <QDebug>
-#include <QRandomGenerator> // Add this include for random number generation
+#include <QRandomGenerator>
+#include "physicsutils.h"
 
 
 GameWidget::GameWidget(QWidget *parent)
@@ -170,8 +171,6 @@ void GameWidget::updateScene()
 {
     // Track elapsed time
     m_elapsedTime += 0.016f; // ~16ms per frame at 60 FPS
-    // Reduce inertia so sword follows your hand more closely
-    // Add more smoothing to reduce vibration (80% old, 20% new)
     m_handPosition.setX(0.8f * m_handPosition.x() + 0.2f * m_lastValidHandPosition.x());
     m_handPosition.setY(0.8f * m_handPosition.y() + 0.2f * m_lastValidHandPosition.y());
 
@@ -278,14 +277,8 @@ void GameWidget::drawDistanceIndicators()
             glVertex3f(x, y, z);
         }
         glEnd();
-
-        // Draw distance text if needed
-        // This would require more complex text rendering which
-        // is omitted for simplicity
     }
 
-    // After drawing the ground plane and marker rings, add hit region overlay:
-    // Move the hit region closer to the player to match the collision detection zone
     glDisable(GL_LIGHTING);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -1076,62 +1069,6 @@ void GameWidget::updateProjectilePositions()
     }
 }
 
-QVector3D GameWidget::calculateProjectilePosition(const ProjectileRenderData &proj, float time)
-{
-    // Calculate position based on physics formula:
-    // position = initialPosition + velocity*time + 0.5*acceleration*time^2
-    const QVector3D gravity(0.0f, -9.8f, 0.0f);
-    return proj.position + proj.velocity * time + 0.5f * gravity * time * time;
-}
-
-// Add this helper method to ensure projectiles will reach the hit zone
-void GameWidget::configureProjectileTrajectory(ProjectileRenderData &projectile)
-{
-    // Calculate if projectile will reach hit zone (z between 0 and 5)
-    // Using projectile motion equations
-    bool willHitZone = false;
-
-    // Time to reach back of hit zone (z = 0)
-    if (projectile.velocity.z() < 0)
-    { // Only if moving toward screen
-        float timeToBackOfZone = (0.0f - projectile.position.z()) / projectile.velocity.z();
-        // Calculate front of zone time but only use if needed
-        float timeToFrontOfZone = (5.0f - projectile.position.z()) / projectile.velocity.z();
-
-        // Projectile passes through hit zone if timeToBackOfZone > 0
-        if (timeToBackOfZone > 0.0f && timeToFrontOfZone > timeToBackOfZone)
-        {
-            willHitZone = true;
-
-            // We can use timeToFrontOfZone here if needed
-            // For debugging: qDebug() << "Projectile will hit zone between" << timeToBackOfZone << "and" << timeToFrontOfZone;
-        }
-    }
-
-    // If projectile won't reach hit zone, adjust its trajectory
-    if (!willHitZone)
-    {
-        // Set a target position in the hit zone
-        float targetZ = 3.0f;                                            // Middle of hit zone
-        float targetX = QRandomGenerator::global()->bounded(6) - 3;      // Random x between -3 and 3
-        float targetY = 1.0f + (QRandomGenerator::global()->bounded(3)); // Random height between 1 and 4
-
-        // Calculate time to reach target (based on z-velocity)
-        const float desiredTime = 2.0f; // 2 seconds to reach target
-
-        // Calculate required velocity
-        projectile.velocity.setZ((targetZ - projectile.position.z()) / desiredTime);
-        projectile.velocity.setX((targetX - projectile.position.x()) / desiredTime);
-
-        // Account for gravity when setting y velocity: v_y = (y - y₀)/t + 0.5*g*t
-        projectile.velocity.setY((targetY - projectile.position.y()) / desiredTime +
-                                 0.5f * 9.8f * desiredTime);
-    }
-}
-float distanceBetweenSegments(
-    const QVector3D &p1, const QVector3D &q1,
-    const QVector3D &p2, const QVector3D &q2);
-
 // Add this method to detect collisions between sword and projectiles in the hit zone
 void GameWidget::checkHitZoneCollisions()
 {
@@ -1189,7 +1126,7 @@ void GameWidget::checkHitZoneCollisions()
         }
 
         // Refine collision detection for projectiles
-        float projectileRadius = getProjectileCollisionRadius(proj.type);
+        float projectileRadius = getProjectileCollisionRadius(static_cast<Projectile::Type>(proj.type));
 
         if (proj.type == ProjectileRenderData::CYLINDER)
         {
@@ -1254,76 +1191,6 @@ void GameWidget::checkHitZoneCollisions()
 
         ++index;
     }
-}
-
-float GameWidget::getProjectileCollisionRadius(ProjectileRenderData::Type type) const
-{
-    switch (type)
-    {
-    case ProjectileRenderData::Type::CYLINDER:
-        return 1.0f; // length is 2
-    case ProjectileRenderData::Type::CONE:
-        return 0.7f; // height = 2, base = 0.6
-    case ProjectileRenderData::Type::PYRAMID:
-        return 1.2f; // base 2, height 1.6
-    // Add cases for other types
-    default:
-        return 0.5f;
-    }
-}
-
-float distanceBetweenSegments(
-    const QVector3D &p1, const QVector3D &q1,
-    const QVector3D &p2, const QVector3D &q2)
-{
-    QVector3D d1 = q1 - p1;
-    QVector3D d2 = q2 - p2;
-    QVector3D r = p1 - p2;
-
-    float a = QVector3D::dotProduct(d1, d1);
-    float e = QVector3D::dotProduct(d2, d2);
-    float f = QVector3D::dotProduct(d2, r);
-
-    float s, t;
-
-    if (a <= 1e-6f && e <= 1e-6f)
-    {
-        return (p1 - p2).length();
-    }
-    if (a <= 1e-6f)
-    {
-        s = 0.0f;
-        t = std::clamp(f / e, 0.0f, 1.0f);
-    }
-    else
-    {
-        float c = QVector3D::dotProduct(d1, r);
-        if (e <= 1e-6f)
-        {
-            t = 0.0f;
-            s = std::clamp(-c / a, 0.0f, 1.0f);
-        }
-        else
-        {
-            float b = QVector3D::dotProduct(d1, d2);
-            float denom = a * e - b * b;
-            if (denom != 0.0f)
-            {
-                s = std::clamp((b * f - c * e) / denom, 0.0f, 1.0f);
-            }
-            else
-            {
-                s = 0.0f;
-            }
-            t = (b * s + f) / e;
-            t = std::clamp(t, 0.0f, 1.0f);
-        }
-    }
-
-    QVector3D c1 = p1 + d1 * s;
-    QVector3D c2 = p2 + d2 * t;
-
-    return (c1 - c2).length();
 }
 
 void GameWidget::loadTextures()
