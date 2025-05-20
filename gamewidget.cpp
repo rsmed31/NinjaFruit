@@ -9,18 +9,6 @@ extern "C"
 #include <QDebug>
 #include <QRandomGenerator> // Add this include for random number generation
 
-// Vertex data for drawing primitives
-static const GLfloat cylinderVertices[] = {
-    // Basic cylinder vertices would go here
-    // For brevity, only part of the data is shown
-    // In a real implementation, you would generate vertices
-    // programmatically with proper normals and texture coordinates
-};
-
-static const GLuint cylinderIndices[] = {
-    // Triangle indices for the cylinder
-    // Would be generated programmatically
-};
 
 GameWidget::GameWidget(QWidget *parent)
     : QOpenGLWidget(parent), m_handPosition(0.0f, 0.0f, 0.0f), m_cameraDistance(10.0f), m_cameraHeight(5.0f), m_floorSize(20.0f), m_handRangeRadius(3.0f), m_handRangeHeight(8.0f), m_elapsedTime(0.0f), m_program(nullptr)
@@ -48,7 +36,6 @@ GameWidget::~GameWidget()
     doneCurrent();
 }
 
-// Update the setHandPosition function for better mapping
 void GameWidget::setHandPosition(float x, float y)
 {
     if (x == -999.0f && y == -999.0f)
@@ -65,10 +52,6 @@ void GameWidget::setHandPosition(float x, float y)
 
 void GameWidget::initializeGL()
 {
-    // Suppress unused variable warnings
-    (void)cylinderVertices;
-    (void)cylinderIndices;
-
     // Initialize OpenGL functions
     initializeOpenGLFunctions();
     glClearColor(0.05f, 0.05f, 0.1f, 1.0f); // Darker background
@@ -122,7 +105,6 @@ void GameWidget::initializeGL()
 
     // Create shaders and geometry
     createShaders();
-    createGeometry();
     glEnable(GL_NORMALIZE);
     glEnable(GL_LIGHTING);
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_TRUE); // ✅ Add this
@@ -1079,10 +1061,6 @@ void GameWidget::createShaders()
         m_program = nullptr;
         return;
     }
-}
-
-void GameWidget::createGeometry()
-{
 }
 
 void GameWidget::updateProjectilePositions()

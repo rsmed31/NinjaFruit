@@ -111,7 +111,6 @@ private:
     
     // OpenGL-specific helpers
     void createShaders();
-    void createGeometry();
     
     // New functions for textures
     void loadTextures();
