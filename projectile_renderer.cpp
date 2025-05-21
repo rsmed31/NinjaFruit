@@ -470,31 +470,11 @@ void ProjectileRenderer::drawPyramid()
         glEnd();
     }
 
-    // Draw edges for better 3D definition
+    // Finish textured faces
     glDisable(GL_TEXTURE_2D);
-    glDisable(GL_LIGHTING);
-    glColor3f(0.0f, 0.0f, 0.0f);
-    glLineWidth(1.5f); // Slightly thicker lines
 
-    // Base outline
-    glBegin(GL_LINE_LOOP);
-    for (int i = 0; i < 4; i++) {
-        glVertex3fv(vertices[i]);
-    }
-    glEnd();
-    
-    // Side edges
-    glBegin(GL_LINES);
-    for (int i = 0; i < 4; i++) {
-        glVertex3fv(vertices[i]);
-        glVertex3fv(vertices[4]); // Apex
-    }
-    glEnd();
-    
-    // Re-enable face culling
+    // Re-enable face culling for correct back-face hiding
     glEnable(GL_CULL_FACE);
-    glEnable(GL_LIGHTING);
-    glDisable(GL_TEXTURE_2D);
 }
 
 void ProjectileRenderer::drawHalfCone(bool mirror)

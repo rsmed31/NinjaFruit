@@ -20,15 +20,10 @@
 
 // Define ProjectileType enum
 enum class ProjectileType {
-    APPLE,
-    ORANGE,
-    BANANA,
-    WATERMELON,
     CONE,
     CYLINDER,
     CUBE,
     PYRAMID
-    // Add other types as needed
 };
 
 class GameWidget : public QOpenGLWidget, protected QOpenGLFunctions
