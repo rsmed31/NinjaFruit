@@ -82,15 +82,11 @@ void GameWidget::initializeGL()
 
     // Enable texturing
     glEnable(GL_TEXTURE_2D);
-
-    // Load textures
     loadTextures();
 
     // Enable lighting for better 3D appearance
     glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
-    // glEnable(GL_COLOR_MATERIAL); // REMOVE this line to avoid color/lighting conflicts
-
     // Setup materials
     GLfloat ambient[] = {0.2f, 0.2f, 0.2f, 1.0f};
     GLfloat diffuse[] = {0.8f, 0.8f, 0.8f, 1.0f};
@@ -101,7 +97,6 @@ void GameWidget::initializeGL()
     glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
     glLightfv(GL_LIGHT0, GL_SPECULAR, specular);
     glLightfv(GL_LIGHT0, GL_POSITION, position);
-    //
     // Enable secondary light source
     glEnable(GL_LIGHT1);
 
@@ -115,7 +110,6 @@ void GameWidget::initializeGL()
     glLightfv(GL_LIGHT1, GL_SPECULAR, light1_specular);
     // Enable third light source
     glEnable(GL_LIGHT2);
-
     // Define light2: lower side fill light (e.g. under the player, angled up)
     GLfloat light2_pos[] = {3.0f, -2.0f, 2.0f, 1.0f};     // From below right
     GLfloat light2_diffuse[] = {0.2f, 0.2f, 0.5f, 1.0f};  // Cool bluish light
@@ -203,13 +197,10 @@ void GameWidget::updateScene()
     m_elapsedTime += 0.016f; // ~16ms per frame at 60 FPS
     m_handPosition.setX(0.8f * m_handPosition.x() + 0.2f * m_lastValidHandPosition.x());
     m_handPosition.setY(0.8f * m_handPosition.y() + 0.2f * m_lastValidHandPosition.y());
-
     // Check for sword-projectile collisions
     checkHitZoneCollisions();
-
     // Update projectile positions based on physics
     updateProjectilePositions();
-
     // Request a redraw
     update();
 }
@@ -248,7 +239,6 @@ void GameWidget::launchProjectile(const Projectile &projectile)
     m_projectiles.append(projData);
 }
 
-// Add a new method to handle projectile splitting
 void GameWidget::splitProjectile(int index)
 {
     if (index >= 0 && index < m_projectiles.size())
@@ -263,16 +253,11 @@ void GameWidget::clearProjectiles()
     m_projectiles.clear();
 }
 
-
-// Add this method near the other helper functions to get sword endpoints in world space
 void GameWidget::getSwordEndpoints(QVector3D &handlePos, QVector3D &tipPos)
 {
     // Start with the hand position
     float handX = m_handPosition.x() * 0.25f; // Match scale in drawVirtualHand
     float handY = m_handPosition.y() * 0.25f;
-
-    // Calculate handle position (base of sword) in world coordinates
-    // Match the translation in drawVirtualHand
     handlePos = QVector3D(handX, handY + 0.5f, 2.0f); // Match cylinder plane
 
     // Rotation angles from drawVirtualHand (should match exactly)
@@ -281,7 +266,6 @@ void GameWidget::getSwordEndpoints(QVector3D &handlePos, QVector3D &tipPos)
 
     // Sword length in world units (scaled from model units)
     float swordScale = 0.12f;
-
     float swordLength = 18.0f * swordScale;
 
     // Calculate the tip position by applying the rotations to a vector pointing upward
@@ -305,7 +289,6 @@ void GameWidget::getSwordEndpoints(QVector3D &handlePos, QVector3D &tipPos)
     // This publishes the handle and tip positions for collision detection
     emit swordPositionUpdated(handlePos, tipPos);
 }
-
 
 // Update the drawProjectiles method to ensure they appear within view
 void GameWidget::drawProjectiles()
@@ -336,7 +319,6 @@ void GameWidget::createShaders()
                                        "void main() {\n"
                                        "    gl_FragColor = vec4(objectColor, 1.0);\n"
                                        "}\n");
-
     // Link shader program
     if (!m_program->link())
     {
@@ -359,8 +341,6 @@ void GameWidget::updateProjectilePositions()
         Q_UNUSED(calculateProjectilePosition(proj, timeActive));
     }
 }
-
-// Add this method to detect collisions between sword and projectiles in the hit zone
 void GameWidget::checkHitZoneCollisions()
 {
     // Get sword endpoints
@@ -558,8 +538,6 @@ void GameWidget::loadTextures()
 
     qDebug() << "Textures loaded successfully";
 }
-
-// Make sure your random projectile generation includes all types
 void GameWidget::createRandomProjectile()
 {
     // Debug output to check type distribution
@@ -588,8 +566,6 @@ void GameWidget::createRandomProjectile()
         type = Projectile::CONE;
         qDebug() << "Default to CONE";
     }
-
-    // Create projectile with the determined type
     Projectile projectile(type);                         // Pass type to constructor instead of using setType
     projectile.setPosition(QVector3D(0.0f, 1.0f, 5.0f)); // Start position
     launchProjectile(projectile);
