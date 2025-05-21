@@ -4,6 +4,8 @@
         <file>textures/cone.jpg</file>
         <file>textures/cube.png</file>
         <file>textures/pyramid.jpg</file>
+        <file>textures/wall.png</file>
+        <file>textures/arch_portal.png</file>
     </qresource>
     <qresource prefix="/">
        <file>image/logo.png</file>

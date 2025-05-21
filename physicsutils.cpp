@@ -5,8 +5,22 @@
 
 QVector3D calculateProjectilePosition(const ProjectileRenderData& proj, float time)
 {
-    const QVector3D gravity(0.0f, -9.8f, 0.0f);
-    return proj.position + proj.velocity * time + 0.5f * gravity * time * time;
+    // Calculate position based on projectile type and time
+    switch (proj.type) {
+    case ProjectileRenderData::CONE:
+    case ProjectileRenderData::CYLINDER:
+    case ProjectileRenderData::CUBE:
+    case ProjectileRenderData::PYRAMID:
+        // Standard projectile motion with gravity
+        return QVector3D(
+            proj.position.x() + proj.velocity.x() * time,
+            proj.position.y() + proj.velocity.y() * time - 0.5f * 9.8f * time * time,
+            proj.position.z() + proj.velocity.z() * time
+        );
+    default:
+        // Use position field if initialPosition is not available
+        return proj.position;
+    }
 }
 
 void configureProjectileTrajectory(ProjectileRenderData& projectile)
@@ -70,17 +84,4 @@ float distanceBetweenSegments(
     QVector3D c1 = p1 + d1 * s;
     QVector3D c2 = p2 + d2 * t;
     return (c1 - c2).length();
-}
-
-
-float getProjectileCollisionRadius(Projectile::Type type)
-{
-    switch (type)
-    {
-    case Projectile::CYLINDER: return 1.0f;   // length = 2
-    case Projectile::CONE:     return 0.7f;   // height = 2, base = 0.6
-    case Projectile::CUBE:     return 1.3f;   // side = 2
-    case Projectile::PYRAMID:  return 1.2f;   // base 2, height 1.6
-    default:                   return 0.6f;
-    }
 }

@@ -2,7 +2,7 @@
 #include "projectilerenderdata.h"
 #include <QtMath>
 #include <QOpenGLFunctions>
-
+#include "physicsutils.h"
 // Properly include GLU
 #include <GL/gl.h>
 extern "C" {
@@ -534,27 +534,7 @@ void ProjectileRenderer::drawHalfCone(bool mirror)
     glDisable(GL_TEXTURE_2D);
 }
 
-QVector3D ProjectileRenderer::calculateProjectilePosition(const ProjectileRenderData& proj, float time)
-{
-    // Calculate position based on projectile type and time
-    switch (proj.type) {
-    case ProjectileRenderData::CONE:
-    case ProjectileRenderData::CYLINDER:
-    case ProjectileRenderData::CUBE:
-    case ProjectileRenderData::PYRAMID:
-        // Standard projectile motion with gravity
-        return QVector3D(
-            proj.position.x() + proj.velocity.x() * time,
-            proj.position.y() + proj.velocity.y() * time - 0.5f * 9.8f * time * time,
-            proj.position.z() + proj.velocity.z() * time
-        );
-    default:
-        // Use position field if initialPosition is not available
-        return proj.position;
-    }
-}
-
-float ProjectileRenderer::getProjectileCollisionRadius(Projectile::Type type)
+float getProjectileCollisionRadius(Projectile::Type type)
 {
     switch (type) {
     case Projectile::Type::CYLINDER:

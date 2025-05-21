@@ -103,7 +103,7 @@ private:
     
     // New functions for textures
     void loadTextures();
-    GLuint m_textures[4]; // Array for texture IDs
+    GLuint m_textures[7]; // Array for texture IDs
     
     // Helper function to map Projectile::Type to ProjectileRenderData::Type
     ProjectileRenderData::Type mapProjectileType(Projectile::Type type);

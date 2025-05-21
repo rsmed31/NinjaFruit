@@ -11,20 +11,19 @@ extern "C"
 #include "physicsutils.h"
 #include "hand_renderer.h"
 
-
 GameWidget::GameWidget(QWidget *parent)
-    : QOpenGLWidget(parent), 
-      m_handPosition(0.0f, 0.0f, 0.0f), 
-      m_cameraDistance(10.0f), 
-      m_cameraHeight(5.0f), 
-      m_floorSize(20.0f), 
-      m_handRangeRadius(3.0f), 
-      m_handRangeHeight(8.0f), 
-      m_elapsedTime(0.0f), 
+    : QOpenGLWidget(parent),
+      m_handPosition(0.0f, 0.0f, 0.0f),
+      m_cameraDistance(10.0f),
+      m_cameraHeight(5.0f),
+      m_floorSize(20.0f),
+      m_handRangeRadius(3.0f),
+      m_handRangeHeight(8.0f),
+      m_elapsedTime(0.0f),
       m_program(nullptr),
-    m_projectileRenderer(nullptr),
-    m_handRenderer(nullptr),
-    m_sceneRenderer(nullptr)
+      m_projectileRenderer(nullptr),
+      m_handRenderer(nullptr),
+      m_sceneRenderer(nullptr)
 {
     // Set focus policy to accept keyboard input
     setFocusPolicy(Qt::StrongFocus);
@@ -63,12 +62,13 @@ void GameWidget::setHandPosition(float x, float y)
         m_handPosition = QVector3D(x, y, 10.0f);
         m_lastValidHandPosition = m_handPosition;
     }
-    
+
     // Now we can properly update the hand renderer
-    if (m_handRenderer) {
+    if (m_handRenderer)
+    {
         m_handRenderer->setHandPosition(m_handPosition);
     }
-    
+
     update();
 }
 
@@ -159,9 +159,9 @@ void GameWidget::paintGL()
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     gluLookAt(
-        0.0, 1.8, 6.0,   // Move camera closer (z=6.0 instead of 8.0)
-        0.0, 1.0, -30.0, // Look further down the z-axis for better depth
-        0.0, 1.0, 10.0   // Up vector
+        0.0, 1.8, 6.0,   // Eye
+        0.0, 1.0, -20.0, // Center (less tilt)
+        0.0, 1.0, 0.0    // Up
     );
 
     // 3. Lighting setup
@@ -173,12 +173,34 @@ void GameWidget::paintGL()
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    if (m_sceneRenderer) {
+    // Important: Release shader program to ensure fixed-function texturing works
+    if (m_program)
+    {
+        m_program->release();
+    }
+
+    if (m_sceneRenderer)
+    {
+        // Draw arena walls with appropriate textures
+        m_sceneRenderer->drawArenaWalls(
+            m_textures[4], // Wall texture
+            m_textures[5], // Arch texture
+            m_textures[6]  // Portal texture
+        );
+
         m_sceneRenderer->drawDistanceIndicators();
         m_sceneRenderer->drawHitCylinder();
     }
+
+    // Optionally rebind program for other rendering that might need it
+    // if (m_program) {
+    //    m_program->bind();
+    // }
+
     drawProjectiles();
-    if (m_handRenderer) {
+
+    if (m_handRenderer)
+    {
         m_handRenderer->drawVirtualHand();
     }
 }
@@ -293,7 +315,8 @@ void GameWidget::getSwordEndpoints(QVector3D &handlePos, QVector3D &tipPos)
 // Update the drawProjectiles method to ensure they appear within view
 void GameWidget::drawProjectiles()
 {
-    if (m_projectileRenderer) {
+    if (m_projectileRenderer)
+    {
         m_projectileRenderer->drawProjectiles();
     }
 }
@@ -396,26 +419,27 @@ void GameWidget::checkHitZoneCollisions()
 
         // Get accurate collision radius based on shape geometry
         float radius;
-        switch (proj.type) {
-            case ProjectileRenderData::CYLINDER:
-                // Cylinder with radius 0.5, height 2.0
-                radius = std::sqrt(0.5f*0.5f + 1.0f*1.0f); // ≈ 1.12f
-                break;
-            case ProjectileRenderData::CONE:
-                // Cone with base radius 0.6, height 2.0
-                radius = std::sqrt(0.6f*0.6f + 1.0f*1.0f); // ≈ 1.17f
-                break;
-            case ProjectileRenderData::CUBE:
-                // Cube with side length 1.2 (2*0.6)
-                radius = 0.6f * std::sqrt(3.0f); // ≈ 1.04f
-                break;
-            case ProjectileRenderData::PYRAMID:
-                // Pyramid with base 1.4×1.4 and height 1.5
-                radius = std::sqrt(0.7f*0.7f + 0.7f*0.7f + 1.5f*1.5f); // ≈ 1.82f
-                break;
-            default:
-                radius = 1.0f;
-                break;
+        switch (proj.type)
+        {
+        case ProjectileRenderData::CYLINDER:
+            // Cylinder with radius 0.5, height 2.0
+            radius = std::sqrt(0.5f * 0.5f + 1.0f * 1.0f); // ≈ 1.12f
+            break;
+        case ProjectileRenderData::CONE:
+            // Cone with base radius 0.6, height 2.0
+            radius = std::sqrt(0.6f * 0.6f + 1.0f * 1.0f); // ≈ 1.17f
+            break;
+        case ProjectileRenderData::CUBE:
+            // Cube with side length 1.2 (2*0.6)
+            radius = 0.6f * std::sqrt(3.0f); // ≈ 1.04f
+            break;
+        case ProjectileRenderData::PYRAMID:
+            // Pyramid with base 1.4×1.4 and height 1.5
+            radius = std::sqrt(0.7f * 0.7f + 0.7f * 0.7f + 1.5f * 1.5f); // ≈ 1.82f
+            break;
+        default:
+            radius = 1.0f;
+            break;
         }
 
         // Unified sphere-segment collision test
@@ -433,8 +457,9 @@ void GameWidget::checkHitZoneCollisions()
 
 void GameWidget::loadTextures()
 {
-    // Generate texture IDs
-    glGenTextures(4, m_textures);
+    // Generate texture IDs (7 total: 0-3 for projectiles, 4-6 for arena)
+    glGenTextures(7, m_textures);
+    
 
     // Load cube texture (index 0)
     QImage cubeImg(":/textures/textures/cube.png");
@@ -500,6 +525,60 @@ void GameWidget::loadTextures()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
+    // Load wall texture (index 4)
+    QImage wallImg(":/textures/textures/wall.png");
+    if (wallImg.isNull())
+    {
+        qDebug() << "Failed to load wall texture";
+        wallImg = QImage(1, 1, QImage::Format_RGBA8888);
+        wallImg.fill(QColor(100, 100, 255, 150));
+    }
+    wallImg = wallImg.convertToFormat(QImage::Format_RGBA8888);
+
+    glBindTexture(GL_TEXTURE_2D, m_textures[4]);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, wallImg.width(), wallImg.height(),
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, wallImg.bits());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    // Load arch texture (index 5)
+    QImage archImg(":/textures/textures/wall.png");
+    if (archImg.isNull())
+    {
+        qDebug() << "Failed to load arch texture";
+        archImg = QImage(1, 1, QImage::Format_RGBA8888);
+        archImg.fill(QColor(255, 255, 255, 200));
+    }
+    archImg = archImg.convertToFormat(QImage::Format_RGBA8888);
+
+    glBindTexture(GL_TEXTURE_2D, m_textures[5]);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, archImg.width(), archImg.height(),
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, archImg.bits());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    // Load portal texture (index 6) - copy exact approach from wall texture
+    QImage portalImg(":/textures/textures/arch_portal.png");
+    if (portalImg.isNull())
+    {
+        qDebug() << "Failed to load arch_portal texture";
+        portalImg = QImage(1, 1, QImage::Format_RGBA8888);
+        portalImg.fill(QColor(100, 100, 255, 150));
+    }
+    portalImg = portalImg.convertToFormat(QImage::Format_RGBA8888);
+
+    glBindTexture(GL_TEXTURE_2D, m_textures[6]);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, portalImg.width(), portalImg.height(),
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, portalImg.bits());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    
     // Unbind texture when done
     glBindTexture(GL_TEXTURE_2D, 0);
 

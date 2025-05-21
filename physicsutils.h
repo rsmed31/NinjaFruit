@@ -11,7 +11,4 @@ float distanceBetweenSegments(
     const QVector3D& p1, const QVector3D& q1,
     const QVector3D& p2, const QVector3D& q2);
 
-float getProjectileCollisionRadius(Projectile::Type type);
-
-
 #endif // PHYSICSUTILS_H

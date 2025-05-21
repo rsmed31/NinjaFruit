@@ -28,7 +28,6 @@ private:
     void drawHalfCone(bool mirror);
     
     // Physics and collision detection
-    QVector3D calculateProjectilePosition(const ProjectileRenderData& proj, float time);
     float getProjectileCollisionRadius(Projectile::Type type);
     
     // References to game data

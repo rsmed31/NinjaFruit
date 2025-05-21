@@ -12,7 +12,9 @@ public:
     void drawDistanceIndicators();
     void drawHitCylinder();
     void setupLights();
-    void setupCamera(int width, int height); // <-- updated signature
+    void setupCamera(int width, int height); 
+    void drawArenaWalls(GLuint wallTexture, GLuint archTexture, GLuint portalTexture);
+    
 
 private:
     float m_floorSize;
