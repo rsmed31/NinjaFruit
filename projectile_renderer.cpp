@@ -557,15 +557,19 @@ QVector3D ProjectileRenderer::calculateProjectilePosition(const ProjectileRender
 float ProjectileRenderer::getProjectileCollisionRadius(Projectile::Type type)
 {
     switch (type) {
-    case Projectile::Type::CONE:
-        return 0.6f; // Matches cone base radius
     case Projectile::Type::CYLINDER:
-        return 0.5f; // Matches cylinder radius
+        // Cylinder - slightly reduced from 1.12f
+        return 1.0f; 
+    case Projectile::Type::CONE:
+        // Cone - keep the same
+        return std::sqrt(0.6f*0.6f + 1.0f*1.0f); // ≈ 1.17f 
     case Projectile::Type::CUBE:
-        return 0.7f; // Approximate sphere radius for cube collision
+        // Cube - slightly reduced from 1.04f
+        return 0.95f;
     case Projectile::Type::PYRAMID:
-        return 0.6f; // Approximate sphere radius for pyramid collision
+        // Pyramid - slightly reduced from 1.82f
+        return 1.6f;
     default:
-        return 0.5f;
+        return 1.0f;
     }
 }

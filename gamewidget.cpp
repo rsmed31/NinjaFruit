@@ -349,8 +349,8 @@ void GameWidget::checkHitZoneCollisions()
 
     // Adjusted hit cylinder zone
     const float cylinderRadius = 6.0f;
-    const float cylinderHeight = 9.0f;
-    const QVector3D cylinderCenter(0.0f, 1.5f, -3.5f); // Align with sword plane
+    const float cylinderHeight = 10.0f;
+    const QVector3D cylinderCenter(0.0f, 3.0f, -3.5f); // Align with sword plane
 
     QVector3D swordVector = tipPos - handlePos;
     float swordLength = swordVector.length();
@@ -362,8 +362,6 @@ void GameWidget::checkHitZoneCollisions()
         swordLength = std::clamp(swordLength, 1.0f, 10.0f);
         tipPos = handlePos + swordVector.normalized() * swordLength;
     }
-
-    QVector3D swordDir = swordVector.normalized();
 
     int index = 0;
     QMutableListIterator<ProjectileRenderData> i(m_projectiles);
@@ -379,16 +377,16 @@ void GameWidget::checkHitZoneCollisions()
         }
 
         float t = m_elapsedTime - proj.spawnTime;
-        QVector3D pos = calculateProjectilePosition(proj, t);
+        QVector3D center = calculateProjectilePosition(proj, t);
 
         // Basic spatial filter (is it in the hit zone?)
-        float dx = pos.x() - cylinderCenter.x();
-        float dz = pos.z() - cylinderCenter.z();
+        float dx = center.x() - cylinderCenter.x();
+        float dz = center.z() - cylinderCenter.z();
         float distXZ = std::sqrt(dx * dx + dz * dz);
 
         bool inRadius = distXZ <= cylinderRadius;
-        bool inHeight = pos.y() >= cylinderCenter.y() &&
-                        pos.y() <= cylinderCenter.y() + cylinderHeight;
+        bool inHeight = center.y() >= cylinderCenter.y() &&
+                        center.y() <= cylinderCenter.y() + cylinderHeight;
 
         if (!(inRadius && inHeight))
         {
@@ -396,68 +394,37 @@ void GameWidget::checkHitZoneCollisions()
             continue;
         }
 
-        // Refine collision detection for projectiles
-        float projectileRadius = getProjectileCollisionRadius(static_cast<Projectile::Type>(proj.type));
-
-        if (proj.type == ProjectileRenderData::CYLINDER)
-        {
-            QVector3D cylCenter = pos;
-            QVector3D cylHalfVec = QVector3D(1.0f, 0.0f, 0.0f) * (2.0f * 0.5f);
-            QVector3D cylStart = cylCenter - cylHalfVec;
-            QVector3D cylEnd = cylCenter + cylHalfVec;
-
-            float dist = distanceBetweenSegments(handlePos, tipPos, cylStart, cylEnd);
-
-            if (dist <= 0.5f)
-            {
-                emit projectileSlicedById(proj.id); // Emit signal with projectile ID
-                splitProjectile(index);
-                qDebug() << "Cylinder HIT at index" << index;
-            }
+        // Get accurate collision radius based on shape geometry
+        float radius;
+        switch (proj.type) {
+            case ProjectileRenderData::CYLINDER:
+                // Cylinder with radius 0.5, height 2.0
+                radius = std::sqrt(0.5f*0.5f + 1.0f*1.0f); // ≈ 1.12f
+                break;
+            case ProjectileRenderData::CONE:
+                // Cone with base radius 0.6, height 2.0
+                radius = std::sqrt(0.6f*0.6f + 1.0f*1.0f); // ≈ 1.17f
+                break;
+            case ProjectileRenderData::CUBE:
+                // Cube with side length 1.2 (2*0.6)
+                radius = 0.6f * std::sqrt(3.0f); // ≈ 1.04f
+                break;
+            case ProjectileRenderData::PYRAMID:
+                // Pyramid with base 1.4×1.4 and height 1.5
+                radius = std::sqrt(0.7f*0.7f + 0.7f*0.7f + 1.5f*1.5f); // ≈ 1.82f
+                break;
+            default:
+                radius = 1.0f;
+                break;
         }
-        else if (proj.type == ProjectileRenderData::CONE)
+
+        // Unified sphere-segment collision test
+        float dist = distanceBetweenSegments(handlePos, tipPos, center, center);
+        if (dist <= radius)
         {
-            QVector3D coneStart = pos;
-            QVector3D coneEnd = pos + QVector3D(0.0f, 0.0f, 2.0f);
-
-            float dist = distanceBetweenSegments(handlePos, tipPos, coneStart, coneEnd);
-
-            if (dist <= 0.6f)
-            {
-                emit projectileSlicedById(proj.id); // Emit signal with projectile ID
-                splitProjectile(index);
-                qDebug() << "Cone HIT at index" << index;
-            }
-        }
-        else if (proj.type == ProjectileRenderData::PYRAMID)
-        {
-            QVector3D baseCenter = pos;
-            QVector3D tip = pos + QVector3D(0.0f, 1.6f, 0.0f);
-
-            float dist = distanceBetweenSegments(handlePos, tipPos, baseCenter, tip);
-
-            if (dist <= 1.0f)
-            {
-                emit projectileSlicedById(proj.id); // Emit signal with projectile ID
-                splitProjectile(index);
-                qDebug() << "Pyramid HIT at index" << index;
-            }
-        }
-        else
-        {
-            QVector3D toProj = pos - handlePos;
-            float projLen = QVector3D::dotProduct(toProj, swordDir);
-            projLen = std::clamp(projLen, 0.0f, swordLength);
-            QVector3D closest = handlePos + swordDir * projLen;
-
-            float distToSword = (closest - pos).length();
-
-            if (distToSword <= projectileRadius)
-            {
-                emit projectileSlicedById(proj.id); // Emit signal with projectile ID
-                splitProjectile(index);
-                qDebug() << "Default HIT at index" << index;
-            }
+            emit projectileSlicedById(proj.id); // Emit signal with projectile ID
+            splitProjectile(index);
+            qDebug() << "Hit projectile of type" << proj.type << "at index" << index;
         }
 
         ++index;
