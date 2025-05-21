@@ -15,19 +15,23 @@ struct ProjectileRenderData {
     
     // State enum
     enum State {
-        INACTIVE,
         ACTIVE,
         SPLIT,
-        DESTROYED
+        REMOVED
     };
     
     QVector3D position;   // Position of the projectile
     QVector3D velocity;   // Velocity of the projectile
     Type type;            // Type of projectile
-    State state;          // Current state
-    bool active;          // Whether the projectile is active
     float spawnTime;      // Time when the projectile was spawned
+    bool active;          // Whether the projectile is active
+    State state;          // Current state
     int id;               // Unique identifier for the projectile
+    
+    // Physics data
+    QVector3D initialPosition;
+    QVector3D initialVelocity;
+    float gravity;
 };
 
 #endif // PROJECTILERENDERDATA_H

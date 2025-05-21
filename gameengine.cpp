@@ -104,8 +104,6 @@ void GameEngine::resetGame()
 void GameEngine::updateHandPosition(const QVector3D &position)
 {
     m_handPosition = position;
-    // We don't need to calculate m_swordHandle and m_swordTip here anymore
-    // They will be updated by the swordPositionUpdated signal from GameWidget
 }
 
 QList<Projectile> GameEngine::getProjectiles() const

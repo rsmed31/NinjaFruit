@@ -14,7 +14,9 @@
 
 // Include the full Projectile class rather than forward declaring it
 #include "projectile.h"
-#include "projectilerenderdata.h" // Add this include
+#include "projectilerenderdata.h" 
+#include "projectile_renderer.h"
+#include "hand_renderer.h"
 
 // Define ProjectileType enum
 enum class ProjectileType {
@@ -97,14 +99,6 @@ private:
     void drawVirtualHand();
     void drawProjectiles();
     void drawDistanceIndicators();
-
-    //ss
-    void drawCone();
-    void drawCylinder();
-    void drawCube();
-    void drawPyramid();
-    void drawHalfCone(bool mirror);
-//
     
     // Add missing declaration for getSwordEndpoints method
     void getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos);
@@ -127,6 +121,10 @@ private:
     QOpenGLVertexArrayObject m_vao;
     QOpenGLBuffer m_vertexBuffer;
     QOpenGLBuffer m_indexBuffer;
+    
+    // Rendering components
+    ProjectileRenderer* m_projectileRenderer;
+    HandRenderer* m_handRenderer;
     
     // Draw the hit cylinder
     void drawHitCylinder();

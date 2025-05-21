@@ -9,10 +9,21 @@ extern "C"
 #include <QDebug>
 #include <QRandomGenerator>
 #include "physicsutils.h"
+#include "hand_renderer.h"
 
 
 GameWidget::GameWidget(QWidget *parent)
-    : QOpenGLWidget(parent), m_handPosition(0.0f, 0.0f, 0.0f), m_cameraDistance(10.0f), m_cameraHeight(5.0f), m_floorSize(20.0f), m_handRangeRadius(3.0f), m_handRangeHeight(8.0f), m_elapsedTime(0.0f), m_program(nullptr)
+    : QOpenGLWidget(parent), 
+      m_handPosition(0.0f, 0.0f, 0.0f), 
+      m_cameraDistance(10.0f), 
+      m_cameraHeight(5.0f), 
+      m_floorSize(20.0f), 
+      m_handRangeRadius(3.0f), 
+      m_handRangeHeight(8.0f), 
+      m_elapsedTime(0.0f), 
+      m_program(nullptr),
+      m_projectileRenderer(nullptr),
+      m_handRenderer(nullptr)
 {
     // Set focus policy to accept keyboard input
     setFocusPolicy(Qt::StrongFocus);
@@ -29,6 +40,8 @@ GameWidget::~GameWidget()
     makeCurrent();
 
     delete m_program;
+    delete m_projectileRenderer;
+    delete m_handRenderer;
 
     m_vertexBuffer.destroy();
     m_indexBuffer.destroy();
@@ -48,6 +61,12 @@ void GameWidget::setHandPosition(float x, float y)
         m_handPosition = QVector3D(x, y, 10.0f);
         m_lastValidHandPosition = m_handPosition;
     }
+    
+    // Now we can properly update the hand renderer
+    if (m_handRenderer) {
+        m_handRenderer->setHandPosition(m_handPosition);
+    }
+    
     update();
 }
 
@@ -115,6 +134,10 @@ void GameWidget::initializeGL()
     glEnable(GL_NORMALIZE);
     // glDisable(GL_CULL_FACE); // optional for test
 
+    // Initialize rendering components
+    m_projectileRenderer = new ProjectileRenderer(m_projectiles, m_textures, m_elapsedTime);
+    m_handRenderer = new HandRenderer(m_handPosition, m_textures);
+
     // Set up view matrix - position camera for a front view
     m_viewMatrix.setToIdentity();
     m_viewMatrix.lookAt(
@@ -156,7 +179,9 @@ void GameWidget::paintGL()
     drawDistanceIndicators();
     drawHitCylinder(); // Draw proper 3D hit zone cylinder
     drawProjectiles();
-    drawVirtualHand(); // Draw sword last so it appears on top
+    if (m_handRenderer) {
+        m_handRenderer->drawVirtualHand();
+    }
 }
 
 void GameWidget::resizeGL(int width, int height)
@@ -418,609 +443,12 @@ void GameWidget::getSwordEndpoints(QVector3D &handlePos, QVector3D &tipPos)
     emit swordPositionUpdated(handlePos, tipPos);
 }
 
-// Adjust virtual hand position to be much closer to the camera
-void GameWidget::drawVirtualHand()
-{
-    glPushMatrix();
-
-    // Map hand position with more responsive tracking
-    float angle = m_handPosition.x() * (M_PI / 2.0f); // from -90° to +90°
-    float radius = 6.0f;                              // ✅ match cylinder radius
-    float x = m_handPosition.x();                     // Already normalized in [-7.5, 7.5]
-    float z = -3.0f;                                  // Bring sword up onto the cylinder mesh
-    float y = m_handPosition.y() * 0.6f;              // 🔺 broader vertical sweep
-
-    // Position sword on the grid plane and at the cylinder's z position
-    glTranslatef(x, y + 0.8f, z); // Updated to z=2.0f to align with cylinder
-
-    // Calculate and emit sword endpoints for collision detection
-    QVector3D handlePos, tipPos;
-    getSwordEndpoints(handlePos, tipPos);
-
-    // Adjust rotation for more natural sword orientation
-    glRotatef(15.0f, 0.0f, 0.0f, 1.0f);  // Less tilt on Z axis
-    glRotatef(-20.0f, 0.0f, 1.0f, 0.0f); // Less rotation on Y axis
-
-    // Scale sword to be visible on grid
-    float swordScale = 0.15f; // Larger scale for visibility
-    glScalef(swordScale, swordScale, swordScale);
-
-    glDisable(GL_LIGHTING);
-
-    // Draw sword with bright colors for visibility
-    // Handle
-    glColor3f(0.8f, 0.6f, 0.4f); // Brighter brown
-    glBegin(GL_QUADS);
-    glVertex3f(-0.8f, -8.0f, 0.0f);
-    glVertex3f(0.8f, -8.0f, 0.0f);
-    glVertex3f(0.8f, -2.5f, 0.0f);
-    glVertex3f(-0.8f, -2.5f, 0.0f);
-    glEnd();
-
-    // Crossguard with metallic appearance
-    glColor3f(0.9f, 0.8f, 0.3f); // Brighter gold
-    glBegin(GL_QUADS);
-    glVertex3f(-3.0f, -2.5f, 0.0f);
-    glVertex3f(3.0f, -2.5f, 0.0f);
-    glVertex3f(3.0f, -1.5f, 0.0f);
-    glVertex3f(-3.0f, -1.5f, 0.0f);
-    glEnd();
-
-    // Blade with metallic sheen
-    glColor3f(0.95f, 0.95f, 1.0f); // Bright silver color
-    glBegin(GL_QUADS);
-    glVertex3f(-1.0f, -2.0f, 0.0f);
-    glVertex3f(1.0f, -2.0f, 0.0f);
-    glVertex3f(0.5f, 15.0f, 0.0f);
-    glVertex3f(-0.5f, 15.0f, 0.0f);
-    glEnd();
-
-    // Blade tip
-    glBegin(GL_TRIANGLES);
-    glVertex3f(-0.5f, 15.0f, 0.0f);
-    glVertex3f(0.5f, 15.0f, 0.0f);
-    glVertex3f(0.0f, 18.0f, 0.0f);
-    glEnd();
-
-    // Blade edge highlight
-    glColor3f(1.0f, 1.0f, 1.0f);
-    glLineWidth(1.5f);
-    glBegin(GL_LINES);
-    glVertex3f(0.0f, -2.0f, 0.01f);
-    glVertex3f(0.0f, 18.0f, 0.01f);
-    glEnd();
-
-    // Handle wrap details
-    glColor3f(0.3f, 0.2f, 0.1f);
-    for (int i = -7; i <= -3; i++)
-    {
-        float y = i * 1.0f;
-        glBegin(GL_LINES);
-        glVertex3f(-0.8f, y, 0.01f);
-        glVertex3f(0.8f, y, 0.01f);
-        glEnd();
-    }
-
-    // Pommel
-    glColor3f(0.9f, 0.8f, 0.3f);
-    glBegin(GL_QUADS);
-    glVertex3f(-1.2f, -9.0f, 0.0f);
-    glVertex3f(1.2f, -9.0f, 0.0f);
-    glVertex3f(1.2f, -8.0f, 0.0f);
-    glVertex3f(-1.2f, -8.0f, 0.0f);
-    glEnd();
-
-    glLineWidth(1.0f);
-    glEnable(GL_LIGHTING);
-    glPopMatrix();
-}
-
-void GameWidget::drawCone()
-{
-    glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, m_textures[3]); // Cone texture
-
-    GLUquadric *quad = gluNewQuadric();
-    gluQuadricTexture(quad, GL_TRUE);
-    gluQuadricNormals(quad, GLU_SMOOTH);
-
-    glPushMatrix();
-
-    // Flip direction so base faces viewer (Z- direction)
-    glRotatef(90, 1, 0, 0); // Cone points toward -Z
-
-    float baseRadius = 0.6f;
-    float height = 2.0f;
-
-    // Draw cone
-    gluCylinder(quad, baseRadius, 0.0f, height, 16, 1);
-
-    // Draw base at z = 0 (bottom after rotation)
-    gluDisk(quad, 0.0f, baseRadius, 16, 1);
-
-    glPopMatrix();
-
-    gluDeleteQuadric(quad);
-    glDisable(GL_TEXTURE_2D);
-}
-
-void GameWidget::drawCylinder()
-{
-    // Enable texturing
-    glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, m_textures[2]); // Cylinder (carrot) texture
-
-    GLUquadric *quad = gluNewQuadric();
-    gluQuadricTexture(quad, GL_TRUE); // Enable texture coordinates
-    gluQuadricNormals(quad, GLU_SMOOTH);
-
-    glRotatef(90, 0.0f, 1.0f, 0.0f); // align with X axis
-
-    float radius = 0.2f;
-    float length = 1.0f;
-
-    gluCylinder(quad, radius, radius, length, 16, 1);
-
-    // Draw caps
-    gluDisk(quad, 0.0f, radius, 16, 1);
-    glTranslatef(0.0f, 0.0f, length);
-    gluDisk(quad, 0.0f, radius, 16, 1);
-
-    gluDeleteQuadric(quad);
-    glDisable(GL_TEXTURE_2D);
-}
-
-void GameWidget::drawCube()
-{
-    // Enable texturing
-    glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, m_textures[0]); // Cube texture
-
-    float s = 0.5f; // half-length of side
-
-    glBegin(GL_QUADS);
-
-    // Front face (+Z)
-    glNormal3f(0.0f, 0.0f, 1.0f);
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(-s, -s, s);
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f(s, -s, s);
-    glTexCoord2f(1.0f, 1.0f);
-    glVertex3f(s, s, s);
-    glTexCoord2f(0.0f, 1.0f);
-    glVertex3f(-s, s, s);
-
-    // Back face (-Z)
-    glNormal3f(0.0f, 0.0f, -1.0f);
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(s, -s, -s);
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f(-s, -s, -s);
-    glTexCoord2f(1.0f, 1.0f);
-    glVertex3f(-s, s, -s);
-    glTexCoord2f(0.0f, 1.0f);
-    glVertex3f(s, s, -s);
-
-    // Left face (-X)
-    glNormal3f(-1.0f, 0.0f, 0.0f);
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(-s, -s, -s);
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f(-s, -s, s);
-    glTexCoord2f(1.0f, 1.0f);
-    glVertex3f(-s, s, s);
-    glTexCoord2f(0.0f, 1.0f);
-    glVertex3f(-s, s, -s);
-
-    // Right face (+X)
-    glNormal3f(1.0f, 0.0f, 0.0f);
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(s, -s, s);
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f(s, -s, -s);
-    glTexCoord2f(1.0f, 1.0f);
-    glVertex3f(s, s, -s);
-    glTexCoord2f(0.0f, 1.0f);
-    glVertex3f(s, s, s);
-
-    // Top face (+Y)
-    glNormal3f(0.0f, 1.0f, 0.0f);
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(-s, s, s);
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f(s, s, s);
-    glTexCoord2f(1.0f, 1.0f);
-    glVertex3f(s, s, -s);
-    glTexCoord2f(0.0f, 1.0f);
-    glVertex3f(-s, s, -s);
-
-    // Bottom face (-Y)
-    glNormal3f(0.0f, -1.0f, 0.0f);
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(-s, -s, -s);
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f(s, -s, -s);
-    glTexCoord2f(1.0f, 1.0f);
-    glVertex3f(s, -s, s);
-    glTexCoord2f(0.0f, 1.0f);
-    glVertex3f(-s, -s, s);
-
-    glEnd();
-
-    glDisable(GL_TEXTURE_2D);
-}
-
-void GameWidget::drawPyramid()
-{
-    glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, m_textures[1]);
-
-    float h = 1.6f; // height
-    float s = 1.0f; // half-length of base
-
-    glBegin(GL_TRIANGLES);
-
-    // Front face (+Z)
-    glNormal3f(0.0f, 0.707f, 0.707f);
-    glTexCoord2f(0.5f, 1.0f);
-    glVertex3f(0.0f, h, 0.0f);
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(-s, 0.0f, s);
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f(s, 0.0f, s);
-
-    // Right face (+X)
-    glNormal3f(0.707f, 0.707f, 0.0f);
-    glTexCoord2f(0.5f, 1.0f);
-    glVertex3f(0.0f, h, 0.0f);
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(s, 0.0f, s);
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f(s, 0.0f, -s);
-
-    // Back face (-Z)
-    glNormal3f(0.0f, 0.707f, -0.707f);
-    glTexCoord2f(0.5f, 1.0f);
-    glVertex3f(0.0f, h, 0.0f);
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(s, 0.0f, -s);
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f(-s, 0.0f, -s);
-
-    // Left face (-X)
-    glNormal3f(-0.707f, 0.707f, 0.0f);
-    glTexCoord2f(0.5f, 1.0f);
-    glVertex3f(0.0f, h, 0.0f);
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(-s, 0.0f, -s);
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f(-s, 0.0f, s);
-
-    glEnd();
-
-    // Base face (bottom, Y = 0)
-    glBegin(GL_QUADS);
-    glNormal3f(0.0f, -1.0f, 0.0f);
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(-s, 0.0f, -s);
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f(s, 0.0f, -s);
-    glTexCoord2f(1.0f, 1.0f);
-    glVertex3f(s, 0.0f, s);
-    glTexCoord2f(0.0f, 1.0f);
-    glVertex3f(-s, 0.0f, s);
-    glEnd();
-
-    glDisable(GL_TEXTURE_2D);
-}
-
-void GameWidget::drawHalfCone(bool mirror)
-{
-    const float baseRadius = 0.6f;
-    const float height = 2.0f;
-    const int slices = 36;
-    const float angleStep = M_PI / slices;
-    const float slantHeight = sqrt(baseRadius * baseRadius + height * height);
-
-    // Slope direction for normals
-    const float nxBase = height / slantHeight;
-    const float nzBase = baseRadius / slantHeight;
-
-    glPushMatrix();
-    glRotatef(90, 1, 0, 0); // Align along -Z axis
-
-    if (mirror)
-    {
-        glScalef(-1.0f, 1.0f, 1.0f);
-        glFrontFace(GL_CW); // correct normal winding after mirror
-    }
-
-    // Enable lighting-friendly material
-    GLfloat ambient[] = {0.3f, 0.3f, 0.3f, 1.0f};
-    GLfloat diffuse[] = {0.7f, 0.4f, 0.1f, 1.0f}; // light orange
-    GLfloat specular[] = {0.8f, 0.8f, 0.8f, 1.0f};
-    GLfloat shininess = 30.0f;
-
-    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, ambient);
-    glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, diffuse);
-    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, specular);
-    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shininess);
-
-    // 🔵 Curved lateral surface
-    glBegin(GL_TRIANGLE_STRIP);
-    for (int i = 0; i <= slices; ++i)
-    {
-        float angle = i * angleStep;
-        float x = baseRadius * cos(angle);
-        float y = baseRadius * sin(angle);
-
-        QVector3D normal = QVector3D(x * height, y * height, baseRadius * baseRadius).normalized();
-        glNormal3f(normal.x(), normal.y(), normal.z());
-
-        glTexCoord2f(static_cast<float>(i) / slices, 0.0f);
-        glVertex3f(x, y, 0.0f); // base perimeter
-        glTexCoord2f(0.5f, 1.0f);
-        glVertex3f(0.0f, 0.0f, height); // tip
-    }
-    glEnd();
-
-    // 🟢 Base cap (half-disk)
-    glBegin(GL_TRIANGLE_FAN);
-    glNormal3f(0.0f, 0.0f, -1.0f);
-    glTexCoord2f(0.5f, 0.5f);
-    glVertex3f(0.0f, 0.0f, 0.0f); // center
-    for (int i = 0; i <= slices; ++i)
-    {
-        float angle = i * angleStep;
-        float x = baseRadius * cos(angle);
-        float y = baseRadius * sin(angle);
-        glTexCoord2f((x / baseRadius + 1.0f) / 2.0f, (y / baseRadius + 1.0f) / 2.0f);
-        glVertex3f(x, y, 0.0f);
-    }
-    glEnd();
-
-    // 🔴 Flat sliced face
-    glBegin(GL_QUADS);
-    glNormal3f(0.0f, mirror ? -1.0f : 1.0f, 0.0f);
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(0.0f, 0.0f, height); // tip
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f(baseRadius, 0.0f, 0.0f); // base
-    glTexCoord2f(1.0f, 1.0f);
-    glVertex3f(baseRadius, 0.0f, 0.0f); // base
-    glTexCoord2f(0.0f, 1.0f);
-    glVertex3f(0.0f, 0.0f, height); // tip
-    glEnd();
-
-    if (mirror)
-    {
-        glFrontFace(GL_CCW); // reset after mirroring
-    }
-
-    glPopMatrix();
-}
 
 // Update the drawProjectiles method to ensure they appear within view
 void GameWidget::drawProjectiles()
 {
-    glEnable(GL_LIGHTING);
-
-    for (const ProjectileRenderData &proj : m_projectiles)
-    {
-        if (!proj.active)
-            continue;
-
-        QVector3D currentPos = calculateProjectilePosition(proj, m_elapsedTime - proj.spawnTime);
-
-        glPushMatrix();
-        glTranslatef(currentPos.x(), currentPos.y(), currentPos.z());
-        // Add self-rotation
-        float rotationSpeed = 120.0f; // degrees per second
-        float timeSinceSpawn = m_elapsedTime - proj.spawnTime;
-        float angle = fmod(timeSinceSpawn * rotationSpeed, 360.0f); // 0–360 wrap
-
-        glRotatef(angle, 0.0f, 1.0f, 0.0f); // Y-axis spin (adjust axis as needed)
-
-        // Set material properties for textured rendering
-        GLfloat material_diffuse[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-        GLfloat material_ambient[4] = {0.2f, 0.2f, 0.2f, 1.0f};
-        glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-        glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
-
-        if (proj.state == ProjectileRenderData::ACTIVE)
-        {
-            glEnable(GL_TEXTURE_2D);
-            glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
-            // Do NOT use glColor3f() here for textured objects
-
-            switch (proj.type)
-            {
-            case ProjectileRenderData::CONE:
-                drawCone();
-                break;
-            case ProjectileRenderData::CYLINDER:
-                drawCylinder();
-                break;
-            case ProjectileRenderData::CUBE:
-                drawCube();
-                break;
-            case ProjectileRenderData::PYRAMID:
-                drawPyramid();
-                break;
-            }
-            glDisable(GL_TEXTURE_2D);
-        }
-        else if (proj.state == ProjectileRenderData::SPLIT)
-        {
-            float splitTime = m_elapsedTime - proj.spawnTime - 0.1f;
-
-            glDisable(GL_LIGHTING);
-            glColor3f(1.0f, 1.0f, 0.0f); // Only for POP effect (not textured)
-            glPointSize(5.0f);
-            glBegin(GL_POINTS);
-            for (int i = 0; i < 20; i++)
-            {
-                float angle = i * 18.0f;
-                float radius = 0.2f + splitTime * 0.7f;
-                float x = radius * cos(angle);
-                float y = radius * sin(angle);
-                glVertex3f(x, y, 0);
-            }
-            glEnd();
-
-            // For split halves, set material and avoid glColor3f() before textured draw
-            switch (proj.type)
-            {
-            case ProjectileRenderData::CYLINDER:
-            {
-                float offset = 0.3f + splitTime * 0.2f;
-                float fall = splitTime * 0.2f;
-                float rot = splitTime * 60.0f;
-
-                glEnable(GL_LIGHTING);
-                glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-                glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
-
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
-                glPushMatrix();
-                glTranslatef(-offset, -fall, 0);
-                glRotatef(rot, 0, 1, 0);
-                drawCylinder();
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
-                glPushMatrix();
-                glTranslatef(offset, -fall, 0);
-                glRotatef(-rot, 0, 1, 0);
-                drawCylinder();
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-                break;
-            }
-            case ProjectileRenderData::CONE:
-            {
-                float offset = 0.4f + splitTime * 0.15f;
-                float fall = splitTime * 0.15f;
-                float rot = splitTime * 50.0f;
-
-                glEnable(GL_LIGHTING);
-                glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-                glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
-
-                // LEFT HALF
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
-                glPushMatrix();
-                glTranslatef(-offset, -fall, 0);
-                glRotatef(rot, 0, 1, 0);
-                drawHalfCone(false); // Left half
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-
-                // RIGHT HALF
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
-                glPushMatrix();
-                glTranslatef(offset, -fall, 0);
-                glRotatef(-rot, 0, 1, 0);
-                drawHalfCone(true); // Right half (mirrored)
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-                break;
-            }
-
-            case ProjectileRenderData::CUBE:
-            {
-                float offset = 0.6f + splitTime * 0.15f;
-                float fall = splitTime * 0.15f;
-                float rot = splitTime * 45.0f;
-
-                glEnable(GL_LIGHTING);
-                glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-                glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
-
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
-                glPushMatrix();
-                glTranslatef(-offset, -fall, 0);
-                glRotatef(rot, 0, 1, 0);
-                drawCube();
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
-                glPushMatrix();
-                glTranslatef(offset, -fall, 0);
-                glRotatef(-rot, 0, 1, 0);
-                drawCube();
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-                break;
-            }
-            case ProjectileRenderData::PYRAMID:
-            {
-                float offset = 0.6f + splitTime * 0.2f;
-                float fall = splitTime * 0.2f;
-                float rot = splitTime * 50.0f;
-
-                glEnable(GL_LIGHTING);
-                glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-                glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
-
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
-                glPushMatrix();
-                glTranslatef(-offset, -fall, 0.0f);
-                glRotatef(rot, 0, 0, 1);
-                glScalef(0.5f, 1.0f, 1.0f);
-                drawPyramid();
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
-                glPushMatrix();
-                glTranslatef(offset, -fall, 0.0f);
-                glRotatef(-rot, 0, 0, 1);
-                glScalef(0.5f, 1.0f, 1.0f);
-                drawPyramid();
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-                break;
-            }
-            default:
-                // ⏩ Old default split for sphere
-                glColor3f(0.0f, 0.9f, 0.2f);
-
-                glPushMatrix();
-                glTranslatef(-0.3f - splitTime * 0.7f, -splitTime * 1.0f, 0);
-                glRotatef(splitTime * 240.0f, 0, 0, 1);
-                GLUquadric *quad1 = gluNewQuadric();
-                gluQuadricNormals(quad1, GLU_SMOOTH);
-                gluSphere(quad1, 0.4f, 16, 8);
-                gluDeleteQuadric(quad1);
-                glPopMatrix();
-
-                glPushMatrix();
-                glTranslatef(0.3f + splitTime * 0.7f, -splitTime * 1.0f, 0);
-                glRotatef(-splitTime * 240.0f, 0, 0, 1);
-                GLUquadric *quad2 = gluNewQuadric();
-                gluQuadricNormals(quad2, GLU_SMOOTH);
-                gluSphere(quad2, 0.4f, 16, 8);
-                gluDeleteQuadric(quad2);
-                glPopMatrix();
-                break;
-            }
-
-            glEnable(GL_LIGHTING);
-        }
-
-        glPopMatrix();
+    if (m_projectileRenderer) {
+        m_projectileRenderer->drawProjectiles();
     }
 }
 
