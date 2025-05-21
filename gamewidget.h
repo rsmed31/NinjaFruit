@@ -17,6 +17,7 @@
 #include "projectilerenderdata.h" 
 #include "projectile_renderer.h"
 #include "hand_renderer.h"
+#include "scene_renderer.h"
 
 // Define ProjectileType enum
 enum class ProjectileType {
@@ -93,7 +94,6 @@ private:
     void drawHandRange();
     void drawVirtualHand();
     void drawProjectiles();
-    void drawDistanceIndicators();
     
     // Add missing declaration for getSwordEndpoints method
     void getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos);
@@ -120,9 +120,8 @@ private:
     // Rendering components
     ProjectileRenderer* m_projectileRenderer;
     HandRenderer* m_handRenderer;
+    SceneRenderer* m_sceneRenderer;
     
-    // Draw the hit cylinder
-    void drawHitCylinder();
     
     // Check collision between hand and projectiles within hit zone
     void checkHitZoneCollisions();

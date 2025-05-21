@@ -22,8 +22,9 @@ GameWidget::GameWidget(QWidget *parent)
       m_handRangeHeight(8.0f), 
       m_elapsedTime(0.0f), 
       m_program(nullptr),
-      m_projectileRenderer(nullptr),
-      m_handRenderer(nullptr)
+    m_projectileRenderer(nullptr),
+    m_handRenderer(nullptr),
+    m_sceneRenderer(nullptr)
 {
     // Set focus policy to accept keyboard input
     setFocusPolicy(Qt::StrongFocus);
@@ -42,6 +43,7 @@ GameWidget::~GameWidget()
     delete m_program;
     delete m_projectileRenderer;
     delete m_handRenderer;
+    delete m_sceneRenderer;
 
     m_vertexBuffer.destroy();
     m_indexBuffer.destroy();
@@ -137,6 +139,7 @@ void GameWidget::initializeGL()
     // Initialize rendering components
     m_projectileRenderer = new ProjectileRenderer(m_projectiles, m_textures, m_elapsedTime);
     m_handRenderer = new HandRenderer(m_handPosition, m_textures);
+    m_sceneRenderer = new SceneRenderer(m_floorSize, m_cameraDistance, m_cameraHeight);
 
     // Set up view matrix - position camera for a front view
     m_viewMatrix.setToIdentity();
@@ -176,8 +179,10 @@ void GameWidget::paintGL()
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-    drawDistanceIndicators();
-    drawHitCylinder(); // Draw proper 3D hit zone cylinder
+    if (m_sceneRenderer) {
+        m_sceneRenderer->drawDistanceIndicators();
+        m_sceneRenderer->drawHitCylinder();
+    }
     drawProjectiles();
     if (m_handRenderer) {
         m_handRenderer->drawVirtualHand();
@@ -258,148 +263,6 @@ void GameWidget::clearProjectiles()
     m_projectiles.clear();
 }
 
-// Modify drawDistanceIndicators to make hit range more visible
-void GameWidget::drawDistanceIndicators()
-{
-    // Disable lighting for the ground plane
-    glDisable(GL_LIGHTING);
-
-    // Draw a ground plane with fading colors to indicate distance
-    glBegin(GL_QUADS);
-
-    // Near zone - red (danger zone)
-    glColor4f(0.7f, 0.0f, 0.0f, 0.3f);
-    glVertex3f(-20.0f, 0.0f, 10.0f);
-    glVertex3f(20.0f, 0.0f, 10.0f);
-
-    // Middle zone - yellow (warning zone)
-    glColor4f(0.7f, 0.7f, 0.0f, 0.3f);
-    glVertex3f(20.0f, 0.0f, 0.0f);
-    glVertex3f(-20.0f, 0.0f, 0.0f);
-    glEnd();
-
-    // Middle to far zone - green and blue gradient
-    glBegin(GL_QUADS);
-    glColor4f(0.0f, 0.7f, 0.0f, 0.3f);
-    glVertex3f(-20.0f, 0.0f, 0.0f);
-    glVertex3f(20.0f, 0.0f, 0.0f);
-
-    glColor4f(0.0f, 0.0f, 0.7f, 0.3f);
-    glVertex3f(20.0f, 0.0f, -20.0f);
-    glVertex3f(-20.0f, 0.0f, -20.0f);
-    glEnd();
-
-    // Add distance marker rings
-    glColor4f(1.0f, 1.0f, 1.0f, 0.5f);
-    for (int z = -15; z <= 10; z += 5)
-    {
-        glBegin(GL_LINE_LOOP);
-        for (int i = 0; i < 36; i++)
-        {
-            float angle = i * 10.0f * M_PI / 180.0f;
-            float x = 5.0f * cos(angle);
-            float y = 0.02f;
-            glVertex3f(x, y, z);
-        }
-        glEnd();
-    }
-
-    glDisable(GL_LIGHTING);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    // Draw the hit zone closer to the camera (between 0.0f and 1.5f)
-    // with a more visible color and border
-    glColor4f(0.2f, 1.0f, 0.2f, 0.3f); // More saturated green
-    glBegin(GL_QUADS);
-    glVertex3f(-8.0f, 0.001f, 0.0f); // Closer to camera
-    glVertex3f(8.0f, 0.001f, 0.0f);
-    glVertex3f(8.0f, 0.001f, 1.5f);
-    glVertex3f(-8.0f, 0.001f, 1.5f);
-    glEnd();
-
-    // Draw a border around the hit zone
-    glColor4f(1.0f, 1.0f, 1.0f, 0.8f); // Clear white border
-    glLineWidth(2.0f);
-    glBegin(GL_LINE_LOOP);
-    glVertex3f(-8.0f, 0.005f, 0.0f);
-    glVertex3f(8.0f, 0.005f, 0.0f);
-    glVertex3f(8.0f, 0.005f, 1.5f);
-    glVertex3f(-8.0f, 0.005f, 1.5f);
-    glEnd();
-    glLineWidth(1.0f);
-
-    // Add a "HIT ZONE" text indicator (simulated with lines for simplicity)
-    glColor4f(1.0f, 1.0f, 1.0f, 0.7f);
-    glPushMatrix();
-    glTranslatef(0.0f, 0.01f, 0.75f); // Center of hit zone
-    // We'd need actual text rendering here - simplified with a marker
-    glBegin(GL_LINES);
-    glVertex3f(-2.0f, 0.0f, 0.0f);
-    glVertex3f(2.0f, 0.0f, 0.0f);
-    glEnd();
-    glPopMatrix();
-
-    glDisable(GL_BLEND);
-    glEnable(GL_LIGHTING);
-}
-
-void GameWidget::drawHitCylinder()
-{
-    glDisable(GL_LIGHTING);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    glPushMatrix();
-
-    const float radius = 6.0f;
-    const float z = 2.0f;                // Slicing plane
-    const float height = 10.0f;          // Full game height
-    const float yCenter = height / 2.0f; // Center at 5.0f
-    const int segments = 64;             // Number of segments for cylinder
-    const int rings = 14;                // Number of rings for height division
-
-    glTranslatef(0.0f, yCenter, z);
-
-    glColor4f(0.5f, 1.0f, 1.0f, 0.4f); // Bright mesh color
-    glLineWidth(1.2f);
-
-    // Horizontal rings
-    for (int j = 0; j <= rings; ++j)
-    {
-        float y = -height / 2.0f + j * (height / rings);
-        glBegin(GL_LINE_LOOP);
-        for (int i = 0; i < segments; ++i)
-        {
-            float angle = i * 2.0f * M_PI / segments;
-            float x = radius * cos(angle);
-            float z = radius * sin(angle);
-            glVertex3f(x, y, z);
-        }
-        glEnd();
-    }
-
-    // Vertical lines
-    for (int i = 0; i <= segments; ++i)
-    { // 🔺 only front half (180°)
-        float angle = M_PI * i / (segments / 2);
-        float x = radius * cos(angle);
-        float z = radius * sin(angle);
-        glBegin(GL_LINE_STRIP);
-        for (int j = 0; j <= rings; ++j)
-        {
-            float y = -height / 2.0f + j * (height / rings);
-            glVertex3f(x, y, z);
-        }
-        glEnd();
-    }
-
-    glLineWidth(1.0f);
-    glPopMatrix();
-
-    glDisable(GL_BLEND);
-    glEnable(GL_LIGHTING);
-}
 
 // Add this method near the other helper functions to get sword endpoints in world space
 void GameWidget::getSwordEndpoints(QVector3D &handlePos, QVector3D &tipPos)
