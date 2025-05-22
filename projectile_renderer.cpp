@@ -563,13 +563,13 @@ float getProjectileCollisionRadius(ProjectileRenderData::Type type)
 {
     switch (type) {
     case ProjectileRenderData::CYLINDER:
-        return 0.95f; // better than raw sqrt
+        return 1.2f; // ⬆️ account for cone tips + length
     case ProjectileRenderData::CONE:
-        return 1.0f;  // slightly forgiving
+        return 1.0f;
     case ProjectileRenderData::CUBE:
-        return 0.9f;  // avoid oversized
+        return 1.05f; // ⬆️ fix diagonal cube misses
     case ProjectileRenderData::PYRAMID:
-        return 1.5f;  // pointy tip, more forgiving
+        return 1.5f;
     default:
         return 1.0f;
     }

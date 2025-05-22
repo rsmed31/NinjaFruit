@@ -3,6 +3,11 @@
 #include <QDebug>
 #include <GL/glu.h>
 
+// Define GL_CLAMP_TO_EDGE if not defined
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE 0x812F
+#endif
+
 SceneRenderer::SceneRenderer(float floorSize, float cameraDistance, float cameraHeight)
     : m_floorSize(floorSize), m_cameraDistance(cameraDistance), m_cameraHeight(cameraHeight)
 {
@@ -24,23 +29,31 @@ void SceneRenderer::drawDistanceIndicators()
 
     // Near side - golden brown
     glColor4f(0.9f, 0.7f, 0.3f, 1.0f);
-    glTexCoord2f(0.0f, 0.0f); glVertex3f(-m_floorSize, 0.0f, zNear);
-    glTexCoord2f(10.0f, 0.0f); glVertex3f(m_floorSize, 0.0f, zNear);
+    glTexCoord2f(0.0f, 0.0f);
+    glVertex3f(-m_floorSize, 0.0f, zNear);
+    glTexCoord2f(10.0f, 0.0f);
+    glVertex3f(m_floorSize, 0.0f, zNear);
 
     // Midpoint - soft green
     glColor4f(0.4f, 0.9f, 0.4f, 1.0f);
-    glTexCoord2f(10.0f, 5.0f); glVertex3f(m_floorSize, 0.0f, zMid);
-    glTexCoord2f(0.0f, 5.0f); glVertex3f(-m_floorSize, 0.0f, zMid);
+    glTexCoord2f(10.0f, 5.0f);
+    glVertex3f(m_floorSize, 0.0f, zMid);
+    glTexCoord2f(0.0f, 5.0f);
+    glVertex3f(-m_floorSize, 0.0f, zMid);
 
     // Midpoint - soft green
     glColor4f(0.4f, 0.9f, 0.4f, 1.0f);
-    glTexCoord2f(0.0f, 5.0f); glVertex3f(-m_floorSize, 0.0f, zMid);
-    glTexCoord2f(10.0f, 5.0f); glVertex3f(m_floorSize, 0.0f, zMid);
+    glTexCoord2f(0.0f, 5.0f);
+    glVertex3f(-m_floorSize, 0.0f, zMid);
+    glTexCoord2f(10.0f, 5.0f);
+    glVertex3f(m_floorSize, 0.0f, zMid);
 
     // Far side - deep cyan/blue
     glColor4f(0.2f, 0.6f, 1.0f, 1.0f);
-    glTexCoord2f(10.0f, 10.0f); glVertex3f(m_floorSize, 0.0f, zFar);
-    glTexCoord2f(0.0f, 10.0f); glVertex3f(-m_floorSize, 0.0f, zFar);
+    glTexCoord2f(10.0f, 10.0f);
+    glVertex3f(m_floorSize, 0.0f, zFar);
+    glTexCoord2f(0.0f, 10.0f);
+    glVertex3f(-m_floorSize, 0.0f, zFar);
 
     glEnd();
 
@@ -256,60 +269,62 @@ void SceneRenderer::drawArenaWalls(GLuint wallTexture, GLuint archTexture, GLuin
     glDisable(GL_LIGHTING);
     glDisable(GL_BLEND);
     glDisable(GL_CULL_FACE);
-    
+
     // 1. Explicitly enable texturing
     glEnable(GL_TEXTURE_2D);
-    
+
     // 2. Set texture environment mode to modulate with color
     glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    
+
     // 3. Set bright white color for full intensity
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-    
+
     // 4. Bind the portal texture
     glBindTexture(GL_TEXTURE_2D, portalTexture);
-    
+
     // 5. Set texture parameters explicitly
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    
+
     // Portal dimensions
     const float portalWidth = 6.0f;
     const float portalHeight = 10.0f;
     const float portalY = 1.0f;
-    
+
     // Calculate rotation angle based on time
     float rotationSpeed = 0.4f; // Rotations per second
     float angle = fmod(elapsedTime * rotationSpeed * 2.0f * M_PI, 2.0f * M_PI);
     float s = sin(angle);
     float c = cos(angle);
-    
+
     // Draw portal quad with rotating texture coordinates
     glBegin(GL_QUADS);
-      // Calculate rotated texture coordinates around center (0.5, 0.5)
-      // Bottom-left
-      glTexCoord2f(0.5f + (0.0f-0.5f)*c - (0.0f-0.5f)*s, 
-                   0.5f + (0.0f-0.5f)*s + (0.0f-0.5f)*c);
-      glVertex3f(-portalWidth/2, portalY, portalZ);
-      
-      // Top-left
-      glTexCoord2f(0.5f + (0.0f-0.5f)*c - (1.0f-0.5f)*s, 
-                   0.5f + (0.0f-0.5f)*s + (1.0f-0.5f)*c);
-      glVertex3f(-portalWidth/2, portalY + portalHeight, portalZ);
-      
-      // Top-right
-      glTexCoord2f(0.5f + (1.0f-0.5f)*c - (1.0f-0.5f)*s, 
-                   0.5f + (1.0f-0.5f)*s + (1.0f-0.5f)*c);
-      glVertex3f(portalWidth/2, portalY + portalHeight, portalZ);
-      
-      // Bottom-right
-      glTexCoord2f(0.5f + (1.0f-0.5f)*c - (0.0f-0.5f)*s, 
-                   0.5f + (1.0f-0.5f)*s + (0.0f-0.5f)*c);
-      glVertex3f(portalWidth/2, portalY, portalZ);
+    // Calculate rotated texture coordinates around center (0.5, 0.5) with limited radius
+    // Bottom-left
+    glTexCoord2f(0.5f + 0.45f * ((0.0f - 0.5f) * c - (0.0f - 0.5f) * s),
+                 0.5f + 0.45f * ((0.0f - 0.5f) * s + (0.0f - 0.5f) * c));
+    glVertex3f(-portalWidth / 2, portalY, portalZ);
+
+    // Top-left
+    glTexCoord2f(0.5f + 0.45f * ((0.0f - 0.5f) * c - (1.0f - 0.5f) * s),
+                 0.5f + 0.45f * ((0.0f - 0.5f) * s + (1.0f - 0.5f) * c));
+    glVertex3f(-portalWidth / 2, portalY + portalHeight, portalZ);
+
+    // Top-right
+    glTexCoord2f(0.5f + 0.45f * ((1.0f - 0.5f) * c - (1.0f - 0.5f) * s),
+                 0.5f + 0.45f * ((1.0f - 0.5f) * s + (1.0f - 0.5f) * c));
+    glVertex3f(portalWidth / 2, portalY + portalHeight, portalZ);
+
+    // Bottom-right
+    glTexCoord2f(0.5f + 0.45f * ((1.0f - 0.5f) * c - (0.0f - 0.5f) * s),
+                 0.5f + 0.45f * ((1.0f - 0.5f) * s + (0.0f - 0.5f) * c));
+    glVertex3f(portalWidth / 2, portalY, portalZ);
     glEnd();
-    
+
     // Restore rendering states
     glDisable(GL_TEXTURE_2D);
     glEnable(GL_CULL_FACE);
