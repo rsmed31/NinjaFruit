@@ -270,7 +270,6 @@ void SceneRenderer::drawArenaWalls(GLuint wallTexture, GLuint archTexture, GLuin
     // 6. Get and verify current texture binding
     GLint currentTexture;
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &currentTexture);
-    qDebug() << "Portal texture bound:" << currentTexture << "(Expected:" << portalTexture << ")";
     
     // Portal dimensions
     const float portalWidth = 6.0f;
