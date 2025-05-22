@@ -97,25 +97,28 @@ void ProjectileRenderer::drawProjectiles()
                 glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
                 glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
 
+                // LEFT HALF
                 glEnable(GL_TEXTURE_2D);
                 glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
                 glPushMatrix();
                 glTranslatef(-offset, -fall, 0);
                 glRotatef(rot, 0, 1, 0);
-                drawCylinder();
+                drawCylinder(false, true); // only right cone
                 glPopMatrix();
                 glDisable(GL_TEXTURE_2D);
 
+                // RIGHT HALF
                 glEnable(GL_TEXTURE_2D);
                 glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
                 glPushMatrix();
                 glTranslatef(offset, -fall, 0);
                 glRotatef(-rot, 0, 1, 0);
-                drawCylinder();
+                drawCylinder(true, false); // only left cone
                 glPopMatrix();
                 glDisable(GL_TEXTURE_2D);
                 break;
             }
+
             case ProjectileRenderData::CONE:
             {
                 float offset = 0.4f + splitTime * 0.15f;
@@ -248,64 +251,66 @@ void ProjectileRenderer::drawCone()
 
 
 
+void ProjectileRenderer::drawCylinder(bool leftCone, bool rightCone)
+{
+    // Material settings
+    GLfloat matAmbient[] = {0.3f, 0.3f, 0.3f, 1.0f};
+    GLfloat matDiffuse[] = {0.8f, 0.8f, 0.8f, 1.0f};
+    GLfloat matSpecular[] = {0.5f, 0.5f, 0.5f, 1.0f};
+    GLfloat matShininess = 30.0f;
 
-        void ProjectileRenderer::drawCylinder()
-        {
-            // Material settings
-            GLfloat matAmbient[] = {0.3f, 0.3f, 0.3f, 1.0f};
-            GLfloat matDiffuse[] = {0.8f, 0.8f, 0.8f, 1.0f};
-            GLfloat matSpecular[] = {0.5f, 0.5f, 0.5f, 1.0f};
-            GLfloat matShininess = 30.0f;
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, matAmbient);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, matDiffuse);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, matSpecular);
+    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, matShininess);
 
-            glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, matAmbient);
-            glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, matDiffuse);
-            glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, matSpecular);
-            glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, matShininess);
+    GLUquadric *quad = gluNewQuadric();
+    gluQuadricTexture(quad, GL_TRUE);
+    gluQuadricNormals(quad, GLU_SMOOTH);
+    gluQuadricOrientation(quad, GLU_OUTSIDE);
 
-            GLUquadric *quad = gluNewQuadric();
-            gluQuadricTexture(quad, GL_TRUE);
-            gluQuadricNormals(quad, GLU_SMOOTH);
-            gluQuadricOrientation(quad, GLU_OUTSIDE);
+    glPushMatrix();
+    glRotatef(90, 0, 1, 0); // Align along X-axis
 
-            glPushMatrix();
-            glRotatef(90, 0, 1, 0); // Align along X-axis
+    float radius = 0.5f;
+    float height = 2.0f;
+    float coneHeight = 1.0f;
+    // 🔹 Cylinder body (textured)
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, m_textures[2]); // Bark texture
+    glColor3f(1.0f, 1.0f, 1.0f); // Reset to white for proper texture rendering
+    gluCylinder(quad, radius, radius, height, 32, 8);
 
-            float radius = 0.5f;
-            float height = 2.0f;
-            float coneHeight = 1.0f;
-            // 🔹 Cylinder body (textured)
-            glEnable(GL_TEXTURE_2D);
-            glBindTexture(GL_TEXTURE_2D, m_textures[2]); // Bark texture
-            glColor3f(1.0f, 1.0f, 1.0f); // Reset to white for proper texture rendering
-            gluCylinder(quad, radius, radius, height, 32, 8);
+    if (leftCone) {
+        // Back cone (draw without lighting, only using glColor3f)
+        glDisable(GL_LIGHTING);           // <- Disable lighting just for this part
+        glDisable(GL_TEXTURE_2D);
+        glColor3f(0.55f, 0.39f, 0.23f); // RGB ≈ (140, 100, 59)
+        glPushMatrix();
+        glTranslatef(0.0f, 0.0f, -coneHeight);
+        glRotatef(180, 0, 0, 1);
+        gluCylinder(quad, 0.0f, radius, coneHeight, 20, 2);
+        glPopMatrix();
+        glEnable(GL_LIGHTING);            // <- Re-enable lighting
+    }
 
-            // Back cone (draw without lighting, only using glColor3f)
-            glDisable(GL_LIGHTING);           // <- Disable lighting just for this part
-            glDisable(GL_TEXTURE_2D);
-            glColor3f(0.55f, 0.39f, 0.23f); // RGB ≈ (140, 100, 59)
-            glPushMatrix();
-            glTranslatef(0.0f, 0.0f, -coneHeight);
-            glRotatef(180, 0, 0, 1);
-            gluCylinder(quad, 0.0f, radius, coneHeight, 20, 2);
-            glPopMatrix();
-            glEnable(GL_LIGHTING);            // <- Re-enable lighting afterward
+    if (rightCone) {
+        // Front cone (same brown)
+        glDisable(GL_LIGHTING);           // <- Disable lighting just for this part
+        glDisable(GL_TEXTURE_2D);
+        glColor3f(0.55f, 0.39f, 0.23f); // RGB ≈ (140, 100, 59)
+        glPushMatrix();
+        glTranslatef(0.0f, 0.0f, height);
+        gluCylinder(quad, radius, 0.0f, coneHeight, 20, 2);
+        glPopMatrix();
+        glEnable(GL_LIGHTING);            // <- Re-enable lighting afterward
+    }
 
+    glPopMatrix();
 
-            // Front cone (same brown)
-            glDisable(GL_LIGHTING);           // <- Disable lighting just for this part
-            glDisable(GL_TEXTURE_2D);
-            glColor3f(0.55f, 0.39f, 0.23f); // RGB ≈ (140, 100, 59)
-            glPushMatrix();
-            glTranslatef(0.0f, 0.0f, height);
-            gluCylinder(quad, radius, 0.0f, coneHeight, 20, 2);
-            glPopMatrix();
-            glEnable(GL_LIGHTING);            // <- Re-enable lighting afterward
-
-            glPopMatrix();
-
-            gluDeleteQuadric(quad);
-            glDisable(GL_TEXTURE_2D);
-        }
+    gluDeleteQuadric(quad);
+    glDisable(GL_TEXTURE_2D);
+}
 
 
 

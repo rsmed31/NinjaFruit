@@ -22,7 +22,7 @@ public:
 private:
     // Shape rendering methods
     void drawCone();
-    void drawCylinder();
+    void drawCylinder(bool leftCone = true, bool rightCone = true);
     void drawCube();
     void drawPyramid();
     void drawHalfCone(bool mirror);
