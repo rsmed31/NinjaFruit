@@ -494,7 +494,7 @@ void GameWidget::loadTextures()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     // Load cylinder (carrot) texture (index 2)
-    QImage carrotImg(":/textures/textures/carrot.jpg");
+    QImage carrotImg(":/textures/textures/carrot.png");
     if (carrotImg.isNull())
     {
         qDebug() << "Failed to load carrot texture";
