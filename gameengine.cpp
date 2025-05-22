@@ -146,7 +146,7 @@ void GameEngine::spawnProjectile()
 void GameEngine::checkCollisions()
 {
     // Define your sword‐plane and full game‐height
-    const float sliceZ = -3.5f;    // Must match GameWidget’s z
+    const float sliceZ = 10.0f;    // Must match GameWidget’s z
     const float zTolerance = 0.3f; // Allow for blade tilt (~2.0±0.3)
     const float minZ = sliceZ - zTolerance;
     const float maxZ = sliceZ + zTolerance;

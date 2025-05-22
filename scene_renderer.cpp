@@ -71,7 +71,7 @@ void SceneRenderer::drawHitCylinder()
     glPushMatrix();
 
     const float radius = 6.0f;
-    const float z = 2.0f;
+    const float z = 10.0f;
     const float height = 10.0f;
     const float yCenter = height / 2.0f;
     const int segments = 64;
