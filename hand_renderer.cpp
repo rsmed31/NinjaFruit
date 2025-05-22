@@ -17,7 +17,7 @@ void HandRenderer::drawVirtualHand() {
     float angle = m_handPosition.x() * (M_PI / 2.0f); // from -90° to +90°
     float radius = 6.0f;                              // ✅ match cylinder radius
     float x = m_handPosition.x();                     // Already normalized in [-7.5, 7.5]
-    float z = -3.0f;                                  // Bring sword up onto the cylinder mesh
+    float z = -1.0f;                                  // Bring sword up onto the cylinder mesh
     float y = m_handPosition.y() * 0.6f;              // 🔺 broader vertical sweep
 
     // Position sword on the grid plane and at the cylinder's z position
@@ -113,7 +113,7 @@ void HandRenderer::getSwordEndpoints(QVector3D& handlePos, QVector3D& tipPos) {
     float rotY = -20.0f * M_PI / 180.0f; // -20° in radians
 
     // Sword length in world units (scaled from model units)
-    float swordScale = 0.12f;
+    float swordScale = 0.15f;
     float swordLength = 18.0f * swordScale;
 
     // Calculate the tip position by applying the rotations to a vector pointing upward

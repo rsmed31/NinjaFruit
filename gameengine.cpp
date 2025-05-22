@@ -1,5 +1,7 @@
 #include "gameengine.h"
 #include "gamewidget.h" // Add this include to have access to GameWidget class definition
+#include "physicsutils.h" // Include for distanceBetweenSegments
+#include "projectilerenderdata.h" // Include for getProjectileCollisionRadius
 #include <QDebug>
 #include <GL/gl.h>
 
@@ -145,47 +147,27 @@ void GameEngine::spawnProjectile()
 
 void GameEngine::checkCollisions()
 {
-    // Define your sword‐plane and full game‐height
-    const float sliceZ = 10.0f;    // Must match GameWidget’s z
-    const float zTolerance = 0.3f; // Allow for blade tilt (~2.0±0.3)
-    const float minZ = sliceZ - zTolerance;
-    const float maxZ = sliceZ + zTolerance;
-    const float minY = 0.0f;  // Bottom of play area
-    const float maxY = 10.0f; // Top of play area
-
-    for (int i = 0; i < m_projectiles.size(); i++)
+    for (int i = 0; i < m_projectiles.size(); ++i)
     {
-        Projectile &projectile = m_projectiles[i];
-        if (projectile.getState() != Projectile::ACTIVE)
-            continue;
-
+        Projectile& projectile = m_projectiles[i];
         QVector3D pos = projectile.getPosition();
 
-        // Check if projectile is within hit zone boundaries
-        bool inHitZone = (pos.z() >= minZ && pos.z() <= maxZ &&
-                          pos.y() >= minY && pos.y() <= maxY);
+        // Convert Projectile::Type to ProjectileRenderData::Type
+        ProjectileRenderData::Type renderType = static_cast<ProjectileRenderData::Type>(projectile.getType());
 
-        if (inHitZone)
+        // Get collision radius
+        float radius = getProjectileCollisionRadius(renderType);
+
+        // Calculate distance between sword and projectile
+        float distance = distanceBetweenSegments(m_swordHandle, m_swordTip, pos, pos);
+
+        if (distance <= radius)
         {
-            // Use line segment collision detection with the actual sword geometry
-            if (projectile.isColliding(m_swordHandle, m_swordTip))
-            {
-                qDebug() << "Collision detected with projectile" << i
-                         << "at position" << pos
-                         << "sword:" << m_swordHandle << "->" << m_swordTip;
-
-                // Mark projectile as sliced
-                projectile.split();
-                projectile.markAsSliced();
-
-                // Update score by adding projectile's point value
-                int points = projectile.getPointValue();
-                m_score += points;
-                qDebug() << "Adding" << points << "points, new score:" << m_score;
-
-                emit scoreChanged(m_score);
-                emit projectileSplit(i);
-            }
+            emit projectileSplit(i); // Emit signal for splitting the projectile
+            m_projectiles.removeAt(i); // Remove the projectile
+            --i; // Adjust index after removal
+            m_score += 10; // Add score
+            emit scoreChanged(m_score); // Notify UI
         }
     }
 }

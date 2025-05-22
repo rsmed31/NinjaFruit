@@ -13,10 +13,8 @@ public:
     void drawHitCylinder();
     void setupLights();
     void setupCamera(int width, int height); 
-    void drawArenaWalls(GLuint wallTexture, GLuint archTexture, GLuint portalTexture);
+    void drawArenaWalls(GLuint wallTexture, GLuint archTexture, GLuint portalTexture, float elapsedTime);
     void setFloorTexture(GLuint textureId);
-
-    
 
 private:
     float m_floorSize;

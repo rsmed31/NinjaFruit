@@ -559,22 +559,19 @@ void ProjectileRenderer::drawHalfCone(bool mirror)
     glDisable(GL_TEXTURE_2D);
 }
 
-float getProjectileCollisionRadius(Projectile::Type type)
+float getProjectileCollisionRadius(ProjectileRenderData::Type type)
 {
     switch (type) {
-    case Projectile::Type::CYLINDER:
-        // Cylinder - slightly reduced from 1.12f
-        return 1.0f; 
-    case Projectile::Type::CONE:
-        // Cone - keep the same
-        return std::sqrt(0.6f*0.6f + 1.0f*1.0f); // ≈ 1.17f 
-    case Projectile::Type::CUBE:
-        // Cube - slightly reduced from 1.04f
-        return 0.95f;
-    case Projectile::Type::PYRAMID:
-        // Pyramid - slightly reduced from 1.82f
-        return 1.6f;
+    case ProjectileRenderData::CYLINDER:
+        return 0.95f; // better than raw sqrt
+    case ProjectileRenderData::CONE:
+        return 1.0f;  // slightly forgiving
+    case ProjectileRenderData::CUBE:
+        return 0.9f;  // avoid oversized
+    case ProjectileRenderData::PYRAMID:
+        return 1.5f;  // pointy tip, more forgiving
     default:
         return 1.0f;
     }
 }
+

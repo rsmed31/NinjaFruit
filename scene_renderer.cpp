@@ -70,8 +70,8 @@ void SceneRenderer::drawHitCylinder()
 
     glPushMatrix();
 
-    const float radius = 6.0f;
-    const float z = 10.0f;
+    const float radius = 2.5f;
+    const float z = 6.5f;
     const float height = 10.0f;
     const float yCenter = height / 2.0f;
     const int segments = 64;
@@ -163,7 +163,7 @@ void SceneRenderer::setupCamera(int width, int height)
         0.0, 1.0, 10.0);
 }
 
-void SceneRenderer::drawArenaWalls(GLuint wallTexture, GLuint archTexture, GLuint portalTexture)
+void SceneRenderer::drawArenaWalls(GLuint wallTexture, GLuint archTexture, GLuint portalTexture, float elapsedTime)
 {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -252,60 +252,64 @@ void SceneRenderer::drawArenaWalls(GLuint wallTexture, GLuint archTexture, GLuin
 
     glEnable(GL_LIGHTING);
 
-    // Portal drawing - completely rewritten with proper texture setup
+    // Portal drawing - now with rotation
     glDisable(GL_LIGHTING);
     glDisable(GL_BLEND);
     glDisable(GL_CULL_FACE);
-
-    // Remove the unsupported glActiveTexture call
-    // GL_TEXTURE0 and glActiveTexture require OpenGL extensions
-
+    
     // 1. Explicitly enable texturing
     glEnable(GL_TEXTURE_2D);
-
+    
     // 2. Set texture environment mode to modulate with color
     glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-
+    
     // 3. Set bright white color for full intensity
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-
+    
     // 4. Bind the portal texture
     glBindTexture(GL_TEXTURE_2D, portalTexture);
-
+    
     // 5. Set texture parameters explicitly
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-
-    // 6. Get and verify current texture binding
-    GLint currentTexture;
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &currentTexture);
-
+    
     // Portal dimensions
     const float portalWidth = 6.0f;
     const float portalHeight = 10.0f;
     const float portalY = 1.0f;
-
-    // Draw portal quad with clockwise winding (facing the camera)
+    
+    // Calculate rotation angle based on time
+    float rotationSpeed = 0.4f; // Rotations per second
+    float angle = fmod(elapsedTime * rotationSpeed * 2.0f * M_PI, 2.0f * M_PI);
+    float s = sin(angle);
+    float c = cos(angle);
+    
+    // Draw portal quad with rotating texture coordinates
     glBegin(GL_QUADS);
-    // Bottom-left
-    glTexCoord2f(0.0f, 0.0f);
-    glVertex3f(-portalWidth / 2, portalY, portalZ);
-
-    // Top-left
-    glTexCoord2f(0.0f, 1.0f);
-    glVertex3f(-portalWidth / 2, portalY + portalHeight, portalZ);
-
-    // Top-right
-    glTexCoord2f(1.0f, 1.0f);
-    glVertex3f(portalWidth / 2, portalY + portalHeight, portalZ);
-
-    // Bottom-right
-    glTexCoord2f(1.0f, 0.0f);
-    glVertex3f(portalWidth / 2, portalY, portalZ);
+      // Calculate rotated texture coordinates around center (0.5, 0.5)
+      // Bottom-left
+      glTexCoord2f(0.5f + (0.0f-0.5f)*c - (0.0f-0.5f)*s, 
+                   0.5f + (0.0f-0.5f)*s + (0.0f-0.5f)*c);
+      glVertex3f(-portalWidth/2, portalY, portalZ);
+      
+      // Top-left
+      glTexCoord2f(0.5f + (0.0f-0.5f)*c - (1.0f-0.5f)*s, 
+                   0.5f + (0.0f-0.5f)*s + (1.0f-0.5f)*c);
+      glVertex3f(-portalWidth/2, portalY + portalHeight, portalZ);
+      
+      // Top-right
+      glTexCoord2f(0.5f + (1.0f-0.5f)*c - (1.0f-0.5f)*s, 
+                   0.5f + (1.0f-0.5f)*s + (1.0f-0.5f)*c);
+      glVertex3f(portalWidth/2, portalY + portalHeight, portalZ);
+      
+      // Bottom-right
+      glTexCoord2f(0.5f + (1.0f-0.5f)*c - (0.0f-0.5f)*s, 
+                   0.5f + (1.0f-0.5f)*s + (0.0f-0.5f)*c);
+      glVertex3f(portalWidth/2, portalY, portalZ);
     glEnd();
-
+    
     // Restore rendering states
     glDisable(GL_TEXTURE_2D);
     glEnable(GL_CULL_FACE);

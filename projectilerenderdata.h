@@ -34,4 +34,7 @@ struct ProjectileRenderData {
     float gravity;
 };
 
+// Collision utility function - moved from projectile_renderer.cpp
+float getProjectileCollisionRadius(ProjectileRenderData::Type type);
+
 #endif // PROJECTILERENDERDATA_H

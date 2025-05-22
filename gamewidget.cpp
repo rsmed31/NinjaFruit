@@ -183,11 +183,12 @@ void GameWidget::paintGL()
 
     if (m_sceneRenderer)
     {
-        // Draw arena walls with appropriate textures
+        // Draw arena walls with appropriate textures, passing elapsed time for rotation
         m_sceneRenderer->drawArenaWalls(
             m_textures[4], // Wall texture
             m_textures[4], // Arch texture
-            m_textures[6]  // Portal texture
+            m_textures[6], // Portal texture
+            m_elapsedTime  // Pass elapsed time for portal rotation
         );
 
         m_sceneRenderer->drawDistanceIndicators();
@@ -420,29 +421,7 @@ void GameWidget::checkHitZoneCollisions()
         }
 
         // Get accurate collision radius based on shape geometry
-        float radius;
-        switch (proj.type)
-        {
-        case ProjectileRenderData::CYLINDER:
-            // Cylinder with radius 0.5, height 2.0
-            radius = std::sqrt(0.5f * 0.5f + 1.0f * 1.0f); // ≈ 1.12f
-            break;
-        case ProjectileRenderData::CONE:
-            // Cone with base radius 0.6, height 2.0
-            radius = std::sqrt(0.6f * 0.6f + 1.0f * 1.0f); // ≈ 1.17f
-            break;
-        case ProjectileRenderData::CUBE:
-            // Cube with side length 1.2 (2*0.6)
-            radius = 0.6f * std::sqrt(3.0f); // ≈ 1.04f
-            break;
-        case ProjectileRenderData::PYRAMID:
-            // Pyramid with base 1.4×1.4 and height 1.5
-            radius = std::sqrt(0.7f * 0.7f + 0.7f * 0.7f + 1.5f * 1.5f); // ≈ 1.82f
-            break;
-        default:
-            radius = 1.0f;
-            break;
-        }
+        float radius = getProjectileCollisionRadius(proj.type);
 
         // Unified sphere-segment collision test
         float dist = distanceBetweenSegments(handlePos, tipPos, center, center);
@@ -559,6 +538,8 @@ void GameWidget::loadTextures()
                  0, GL_RGBA, GL_UNSIGNED_BYTE, floorImg.bits());
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
     // Load portal texture (index 6) - copy exact approach from wall texture
     QImage portalImg(":/textures/textures/arch_portal.png");
@@ -568,6 +549,8 @@ void GameWidget::loadTextures()
         portalImg = QImage(1, 1, QImage::Format_RGBA8888);
         portalImg.fill(QColor(100, 100, 255, 150));
     }
+    portalImg = portalImg.mirrored(false, true); // Flip vertically
+
     portalImg = portalImg.convertToFormat(QImage::Format_RGBA8888);
 
     glBindTexture(GL_TEXTURE_2D, m_textures[6]);
