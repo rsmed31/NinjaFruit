@@ -134,6 +134,8 @@ void GameWidget::initializeGL()
     m_projectileRenderer = new ProjectileRenderer(m_projectiles, m_textures, m_elapsedTime);
     m_handRenderer = new HandRenderer(m_handPosition, m_textures);
     m_sceneRenderer = new SceneRenderer(m_floorSize, m_cameraDistance, m_cameraHeight);
+    m_sceneRenderer->setFloorTexture(m_textures[5]);
+
 
     // Set up view matrix - position camera for a front view
     m_viewMatrix.setToIdentity();
@@ -184,7 +186,7 @@ void GameWidget::paintGL()
         // Draw arena walls with appropriate textures
         m_sceneRenderer->drawArenaWalls(
             m_textures[4], // Wall texture
-            m_textures[5], // Arch texture
+            m_textures[4], // Arch texture
             m_textures[6]  // Portal texture
         );
 
@@ -459,7 +461,6 @@ void GameWidget::loadTextures()
 {
     // Generate texture IDs (7 total: 0-3 for projectiles, 4-6 for arena)
     glGenTextures(7, m_textures);
-    
 
     // Load cube texture (index 0)
     QImage cubeImg(":/textures/textures/cube.png");
@@ -544,22 +545,20 @@ void GameWidget::loadTextures()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
     // Load arch texture (index 5)
-    QImage archImg(":/textures/textures/wall.png");
-    if (archImg.isNull())
+    QImage floorImg(":/textures/textures/floor.png"); // Add the file to your Qt resources or load by path
+    if (floorImg.isNull())
     {
-        qDebug() << "Failed to load arch texture";
-        archImg = QImage(1, 1, QImage::Format_RGBA8888);
-        archImg.fill(QColor(255, 255, 255, 200));
+        qDebug() << "Failed to load floor texture";
+        floorImg = QImage(1, 1, QImage::Format_RGBA8888);
+        floorImg.fill(Qt::gray);
     }
-    archImg = archImg.convertToFormat(QImage::Format_RGBA8888);
+    floorImg = floorImg.convertToFormat(QImage::Format_RGBA8888);
 
     glBindTexture(GL_TEXTURE_2D, m_textures[5]);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, archImg.width(), archImg.height(),
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, archImg.bits());
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, floorImg.width(), floorImg.height(),
+                 0, GL_RGBA, GL_UNSIGNED_BYTE, floorImg.bits());
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     // Load portal texture (index 6) - copy exact approach from wall texture
     QImage portalImg(":/textures/textures/arch_portal.png");
@@ -578,7 +577,7 @@ void GameWidget::loadTextures()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    
+
     // Unbind texture when done
     glBindTexture(GL_TEXTURE_2D, 0);
 

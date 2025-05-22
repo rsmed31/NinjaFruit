@@ -10,37 +10,48 @@ SceneRenderer::SceneRenderer(float floorSize, float cameraDistance, float camera
 
 void SceneRenderer::drawDistanceIndicators()
 {
-    // Disable lighting for the ground plane
     glDisable(GL_LIGHTING);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, m_floorTexture);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE); // Modulate color and texture
 
-    // Draw a ground plane with fading colors to indicate distance
+    const float zFar = -m_floorSize;
+    const float zMid = -m_floorSize * 0.5f;
+    const float zNear = 10.0f;
+
+    // Floor with gradient: gold → green → blue
     glBegin(GL_QUADS);
-    // Near zone - red (danger zone)
-    glColor4f(0.7f, 0.0f, 0.0f, 0.3f);
-    glVertex3f(-m_floorSize, 0.0f, 10.0f);
-    glVertex3f(m_floorSize, 0.0f, 10.0f);
-    // Middle zone - yellow (warning zone)
-    glColor4f(0.7f, 0.7f, 0.0f, 0.3f);
-    glVertex3f(m_floorSize, 0.0f, 0.0f);
-    glVertex3f(-m_floorSize, 0.0f, 0.0f);
+
+    // Near side - golden brown
+    glColor4f(0.9f, 0.7f, 0.3f, 1.0f);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(-m_floorSize, 0.0f, zNear);
+    glTexCoord2f(10.0f, 0.0f); glVertex3f(m_floorSize, 0.0f, zNear);
+
+    // Midpoint - soft green
+    glColor4f(0.4f, 0.9f, 0.4f, 1.0f);
+    glTexCoord2f(10.0f, 5.0f); glVertex3f(m_floorSize, 0.0f, zMid);
+    glTexCoord2f(0.0f, 5.0f); glVertex3f(-m_floorSize, 0.0f, zMid);
+
+    // Midpoint - soft green
+    glColor4f(0.4f, 0.9f, 0.4f, 1.0f);
+    glTexCoord2f(0.0f, 5.0f); glVertex3f(-m_floorSize, 0.0f, zMid);
+    glTexCoord2f(10.0f, 5.0f); glVertex3f(m_floorSize, 0.0f, zMid);
+
+    // Far side - deep cyan/blue
+    glColor4f(0.2f, 0.6f, 1.0f, 1.0f);
+    glTexCoord2f(10.0f, 10.0f); glVertex3f(m_floorSize, 0.0f, zFar);
+    glTexCoord2f(0.0f, 10.0f); glVertex3f(-m_floorSize, 0.0f, zFar);
+
     glEnd();
 
-    // Middle to far zone - green and blue gradient
-    glBegin(GL_QUADS);
-    glColor4f(0.0f, 0.7f, 0.0f, 0.3f);
-    glVertex3f(-m_floorSize, 0.0f, 0.0f);
-    glVertex3f(m_floorSize, 0.0f, 0.0f);
-    glColor4f(0.0f, 0.0f, 0.7f, 0.3f);
-    glVertex3f(m_floorSize, 0.0f, -m_floorSize);
-    glVertex3f(-m_floorSize, 0.0f, -m_floorSize);
-    glEnd();
+    glDisable(GL_TEXTURE_2D);
 
-    // Add distance marker rings
-    glColor4f(1.0f, 1.0f, 1.0f, 0.5f);
-    for (int z = -15; z <= 10; z += 5)
+    // White distance rings
+    glColor4f(1.0f, 1.0f, 1.0f, 0.4f);
+    for (int z = static_cast<int>(zFar); z <= static_cast<int>(zNear); z += 5)
     {
         glBegin(GL_LINE_LOOP);
-        for (int i = 0; i < 36; i++)
+        for (int i = 0; i < 36; ++i)
         {
             float angle = i * 10.0f * M_PI / 180.0f;
             float x = 5.0f * cos(angle);
@@ -198,7 +209,7 @@ void SceneRenderer::drawArenaWalls(GLuint wallTexture, GLuint archTexture, GLuin
 
     glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, matDiffuse);
     glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, matAmbient);
-    glDisable(GL_LIGHTING);          
+    glDisable(GL_LIGHTING);
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
     glBegin(GL_QUADS);
@@ -215,7 +226,7 @@ void SceneRenderer::drawArenaWalls(GLuint wallTexture, GLuint archTexture, GLuin
 
     glEnable(GL_CULL_FACE); // Restore
     glEnable(GL_LIGHTING);
-    
+
     // Draw top arch
     glDisable(GL_LIGHTING);
     glBindTexture(GL_TEXTURE_2D, wallTexture);
@@ -245,58 +256,63 @@ void SceneRenderer::drawArenaWalls(GLuint wallTexture, GLuint archTexture, GLuin
     glDisable(GL_LIGHTING);
     glDisable(GL_BLEND);
     glDisable(GL_CULL_FACE);
-    
+
     // Remove the unsupported glActiveTexture call
     // GL_TEXTURE0 and glActiveTexture require OpenGL extensions
-    
+
     // 1. Explicitly enable texturing
     glEnable(GL_TEXTURE_2D);
-    
+
     // 2. Set texture environment mode to modulate with color
     glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    
+
     // 3. Set bright white color for full intensity
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-    
+
     // 4. Bind the portal texture
     glBindTexture(GL_TEXTURE_2D, portalTexture);
-    
+
     // 5. Set texture parameters explicitly
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    
+
     // 6. Get and verify current texture binding
     GLint currentTexture;
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &currentTexture);
-    
+
     // Portal dimensions
     const float portalWidth = 6.0f;
     const float portalHeight = 10.0f;
     const float portalY = 1.0f;
-    
+
     // Draw portal quad with clockwise winding (facing the camera)
     glBegin(GL_QUADS);
-      // Bottom-left
-      glTexCoord2f(0.0f, 0.0f);
-      glVertex3f(-portalWidth/2, portalY, portalZ);
-      
-      // Top-left
-      glTexCoord2f(0.0f, 1.0f);
-      glVertex3f(-portalWidth/2, portalY + portalHeight, portalZ);
-      
-      // Top-right
-      glTexCoord2f(1.0f, 1.0f);
-      glVertex3f(portalWidth/2, portalY + portalHeight, portalZ);
-      
-      // Bottom-right
-      glTexCoord2f(1.0f, 0.0f);
-      glVertex3f(portalWidth/2, portalY, portalZ);
+    // Bottom-left
+    glTexCoord2f(0.0f, 0.0f);
+    glVertex3f(-portalWidth / 2, portalY, portalZ);
+
+    // Top-left
+    glTexCoord2f(0.0f, 1.0f);
+    glVertex3f(-portalWidth / 2, portalY + portalHeight, portalZ);
+
+    // Top-right
+    glTexCoord2f(1.0f, 1.0f);
+    glVertex3f(portalWidth / 2, portalY + portalHeight, portalZ);
+
+    // Bottom-right
+    glTexCoord2f(1.0f, 0.0f);
+    glVertex3f(portalWidth / 2, portalY, portalZ);
     glEnd();
-    
+
     // Restore rendering states
     glDisable(GL_TEXTURE_2D);
     glEnable(GL_CULL_FACE);
     glEnable(GL_LIGHTING);
+}
+
+void SceneRenderer::setFloorTexture(GLuint textureId)
+{
+    m_floorTexture = textureId;
 }

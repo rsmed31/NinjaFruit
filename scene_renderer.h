@@ -14,12 +14,16 @@ public:
     void setupLights();
     void setupCamera(int width, int height); 
     void drawArenaWalls(GLuint wallTexture, GLuint archTexture, GLuint portalTexture);
+    void setFloorTexture(GLuint textureId);
+
     
 
 private:
     float m_floorSize;
     float m_cameraDistance;
     float m_cameraHeight;
+    GLuint m_floorTexture = 0;
+
 };
 
 #endif // SCENE_RENDERER_H

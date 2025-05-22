@@ -300,12 +300,6 @@ QVector3D GameEngine::generateRandomVelocity()
     return QVector3D(vx, vy, vz);
 }
 
-void GameEngine::handleMissedProjectiles()
-{
-    // This function is now empty since we handle missed projectiles
-    // in updateProjectiles() to avoid duplicate processing
-}
-
 void GameEngine::connectToGameWidget(GameWidget *widget)
 {
     if (widget)
