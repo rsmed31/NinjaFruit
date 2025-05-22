@@ -77,7 +77,7 @@ void MainWindow::setupUI()
     logoLabel->setAlignment(Qt::AlignCenter);
     welcomeLayout->addWidget(logoLabel);
 
-    QLabel* titleLabel = new QLabel("Shape Shredder");
+    QLabel* titleLabel = new QLabel("Zelda Denfender");
     titleLabel->setAlignment(Qt::AlignCenter);
     QFont titleFont("Arial", 48, QFont::Bold);
     titleLabel->setFont(titleFont);
