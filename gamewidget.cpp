@@ -478,7 +478,7 @@ void GameWidget::loadTextures()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     // Load pyramid texture (index 1)
-    QImage pyramidImg(":/textures/textures/pyramid.jpg");
+    QImage pyramidImg(":/textures/textures/pyramid.png");
     if (pyramidImg.isNull())
     {
         qDebug() << "Failed to load pyramid texture";
@@ -510,7 +510,7 @@ void GameWidget::loadTextures()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     // Load cone texture (index 3)
-    QImage coneImg(":/textures/textures/cone.jpg");
+    QImage coneImg(":/textures/textures/cone.png");
     if (coneImg.isNull())
     {
         qDebug() << "Failed to load cone texture";

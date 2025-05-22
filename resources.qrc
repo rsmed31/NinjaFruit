@@ -1,9 +1,9 @@
 <RCC>
     <qresource prefix="/textures">
         <file>textures/carrot.png</file>
-        <file>textures/cone.jpg</file>
+        <file>textures/cone.png</file>
         <file>textures/cube.png</file>
-        <file>textures/pyramid.jpg</file>
+        <file>textures/pyramid.png</file>
         <file>textures/wall.png</file>
         <file>textures/arch_portal.png</file>
     </qresource>
