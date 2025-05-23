@@ -31,191 +31,103 @@ void ProjectileRenderer::drawProjectiles()
 
         glPushMatrix();
         glTranslatef(currentPos.x(), currentPos.y(), currentPos.z());
-        // Add self-rotation
-        float rotationSpeed = 120.0f; // degrees per second
-        float timeSinceSpawn = m_elapsedTime - proj.spawnTime;
-        float angle = fmod(timeSinceSpawn * rotationSpeed, 360.0f); // 0–360 wrap
-
-        glRotatef(angle, 0.0f, 1.0f, 0.0f); // Y-axis spin (adjust axis as needed)
-
-        // Set material properties for textured rendering
-        GLfloat material_diffuse[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-        GLfloat material_ambient[4] = {0.2f, 0.2f, 0.2f, 1.0f};
-        glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-        glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
 
         if (proj.state == ProjectileRenderData::ACTIVE)
         {
-            glEnable(GL_TEXTURE_2D);
-            glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
+            // Existing code for active projectiles
+            float rotationSpeed = 120.0f; // degrees per second
+            float timeSinceSpawn = m_elapsedTime - proj.spawnTime;
+            float angle = fmod(timeSinceSpawn * rotationSpeed, 360.0f); // 0–360 wrap
 
-            switch (proj.type)
+            glRotatef(angle, 0.0f, 1.0f, 0.0f); // Y-axis spin (adjust axis as needed)
+
+            // Set material properties for textured rendering
+            GLfloat material_diffuse[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+            GLfloat material_ambient[4] = {0.2f, 0.2f, 0.2f, 1.0f};
+            glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
+            glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
+
+            if (proj.state == ProjectileRenderData::ACTIVE)
             {
-            case ProjectileRenderData::CONE:
-                drawCone();
-                break;
-            case ProjectileRenderData::CYLINDER:
-                drawCylinder();
-                break;
-            case ProjectileRenderData::CUBE:
-                drawCube();
-                break;
-            case ProjectileRenderData::PYRAMID:
-                drawPyramid();
-                break;
+                glEnable(GL_TEXTURE_2D);
+                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
+
+                switch (proj.type)
+                {
+                case ProjectileRenderData::CONE:
+                    drawCone();
+                    break;
+                case ProjectileRenderData::CYLINDER:
+                    drawCylinder();
+                    break;
+                case ProjectileRenderData::CUBE:
+                    drawCube();
+                    break;
+                case ProjectileRenderData::PYRAMID:
+                    drawPyramid();
+                    break;
+                }
+                glDisable(GL_TEXTURE_2D);
             }
-            glDisable(GL_TEXTURE_2D);
         }
         else if (proj.state == ProjectileRenderData::SPLIT)
         {
-            float splitTime = m_elapsedTime - proj.spawnTime - 0.1f;
+            // Ensure splitTime is non-negative
+            float splitTime = std::max(0.0f, m_elapsedTime - proj.spawnTime - 0.1f);
 
-            glDisable(GL_LIGHTING);
-            glColor3f(1.0f, 1.0f, 0.0f); // Only for POP effect (not textured)
-            glPointSize(5.0f);
-            glBegin(GL_POINTS);
-            for (int i = 0; i < 20; i++)
-            {
-                float angle = i * 18.0f;
-                float radius = 0.2f + splitTime * 0.7f;
-                float x = radius * cos(angle);
-                float y = radius * sin(angle);
-                glVertex3f(x, y, 0);
-            }
-            glEnd();
-
-            // For split halves, set material and avoid glColor3f() before textured draw
-            switch (proj.type)
-            {
-            case ProjectileRenderData::CYLINDER:
-            {
-                float offset = 0.3f + splitTime * 0.2f;
-                float fall = splitTime * 0.2f;
-                float rot = splitTime * 60.0f;
-
-                glEnable(GL_LIGHTING);
-                glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-                glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
-
-                // LEFT HALF
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
-                glPushMatrix();
-                glTranslatef(-offset, -fall, 0);
-                glRotatef(rot, 0, 1, 0);
-                drawCylinder(false, true); // only right cone
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-
-                // RIGHT HALF
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
-                glPushMatrix();
-                glTranslatef(offset, -fall, 0);
-                glRotatef(-rot, 0, 1, 0);
-                drawCylinder(true, false); // only left cone
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-                break;
-            }
-
-            case ProjectileRenderData::CONE:
-            {
-                float offset = 0.4f + splitTime * 0.15f;
-                float fall = splitTime * 0.15f;
-                float rot = splitTime * 50.0f;
-
-                glEnable(GL_LIGHTING);
-                glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-                glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
-
-                // LEFT HALF
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
-                glPushMatrix();
-                glTranslatef(-offset, -fall, 0);
-                glRotatef(rot, 0, 1, 0);
-                drawHalfCone(false); // Left half
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-
-                // RIGHT HALF
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
-                glPushMatrix();
-                glTranslatef(offset, -fall, 0);
-                glRotatef(-rot, 0, 1, 0);
-                drawHalfCone(true); // Right half (mirrored)
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-                break;
-            }
-            case ProjectileRenderData::CUBE:
-            {
-                float offset = 0.6f + splitTime * 0.15f;
-                float fall = splitTime * 0.15f;
-                float rot = splitTime * 45.0f;
-
-                glEnable(GL_LIGHTING);
-                glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-                glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
-
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[0]); // Use index 0 for cube texture
-                glPushMatrix();
-                glTranslatef(-offset, -fall, 0);
-                glRotatef(rot, 0, 1, 0);
-                drawCube();
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[0]); // Use index 0 for cube texture
-                glPushMatrix();
-                glTranslatef(offset, -fall, 0);
-                glRotatef(-rot, 0, 1, 0);
-                drawCube();
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-                break;
-            }
-            case ProjectileRenderData::PYRAMID:
-            {
-                float offset = 0.6f + splitTime * 0.2f;
-                float fall = splitTime * 0.2f;
-                float rot = splitTime * 50.0f;
-
-                glEnable(GL_LIGHTING);
-                glMaterialfv(GL_FRONT, GL_DIFFUSE, material_diffuse);
-                glMaterialfv(GL_FRONT, GL_AMBIENT, material_ambient);
-
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[1]); // Use index 1 for pyramid texture
-                glPushMatrix();
-                glTranslatef(-offset, -fall, 0.0f);
-                glRotatef(rot, 0, 0, 1);
-                glScalef(0.5f, 1.0f, 1.0f);
-                drawPyramid();
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-
-                glEnable(GL_TEXTURE_2D);
-                glBindTexture(GL_TEXTURE_2D, m_textures[1]); // Use index 1 for pyramid texture
-                glPushMatrix();
-                glTranslatef(offset, -fall, 0.0f);
-                glRotatef(-rot, 0, 0, 1);
-                glScalef(0.5f, 1.0f, 1.0f);
-                drawPyramid();
-                glPopMatrix();
-                glDisable(GL_TEXTURE_2D);
-                break;
-            }
-            }
+            float offset = 0.3f + splitTime * 0.5f; // Move further apart over time
+            float fall = splitTime * 0.2f;         // Apply downward movement
 
             glEnable(GL_LIGHTING);
+
+            // LEFT HALF
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
+            glPushMatrix();
+            glTranslatef(-offset, -fall, 0); // Move left half away
+            drawSplitPiece(proj.type, false); // Draw left piece
+            glPopMatrix();
+            glDisable(GL_TEXTURE_2D);
+
+            // RIGHT HALF
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, m_textures[proj.type]);
+            glPushMatrix();
+            glTranslatef(offset, -fall, 0); // Move right half away
+            drawSplitPiece(proj.type, true); // Draw right piece
+            glPopMatrix();
+            glDisable(GL_TEXTURE_2D);
         }
 
         glPopMatrix();
+    }
+}
+
+void ProjectileRenderer::drawSplitPiece(ProjectileRenderData::Type type, bool isRight)
+{
+    switch (type)
+    {
+    case ProjectileRenderData::CYLINDER:
+        drawCylinder(!isRight, isRight); // Draw one cone per piece
+        break;
+    case ProjectileRenderData::CONE:
+        drawHalfCone(isRight); // Directly call drawHalfCone, which now handles lighting
+        break;
+    case ProjectileRenderData::CUBE:
+        glPushMatrix();
+        glScalef(0.5f, 1.0f, 1.0f); // Reduce width to half for split cube
+        drawCube();
+        glPopMatrix();
+        break;
+    case ProjectileRenderData::PYRAMID:
+        glPushMatrix();
+        if (isRight)
+            glRotatef(-90.0f, 0.0f, 0.0f, 1.0f); // Rotate right piece to lay on the opposite X-axis
+        else
+            glRotatef(90.0f, 0.0f, 0.0f, 1.0f);  // Rotate left piece to lay on the opposite X-axis
+        drawPyramid();
+        glPopMatrix();
+        break;
     }
 }
 
@@ -502,57 +414,37 @@ void ProjectileRenderer::drawPyramid()
     glEnable(GL_CULL_FACE);
 }
 
-void ProjectileRenderer::drawHalfCone(bool mirror)
+void ProjectileRenderer::drawHalfCone(bool isRight)
 {
     glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, m_textures[3]); // Cone texture
+    glBindTexture(GL_TEXTURE_2D, m_textures[3]);
 
-    GLUquadric *quad = gluNewQuadric();
+    GLUquadric* quad = gluNewQuadric();
     gluQuadricTexture(quad, GL_TRUE);
     gluQuadricNormals(quad, GLU_SMOOTH);
 
     glPushMatrix();
-
-    // Flip direction so base faces viewer (Z- direction)
-    glRotatef(90, 1, 0, 0); // Cone points toward -Z
+    glRotatef(90, 1, 0, 0); // Rotate to point along Y
 
     float baseRadius = 0.6f;
     float height = 2.0f;
-    int slices = 16;
 
-    if (mirror) {
-        glScalef(-1.0f, 1.0f, 1.0f); // Mirror on X axis
-    }
+    // Enable lighting and set material properties
+    glEnable(GL_LIGHTING);
+    GLfloat diffuse[] = {1.0f, 1.0f, 1.0f, 1.0f};
+    GLfloat ambient[] = {0.3f, 0.3f, 0.3f, 1.0f};
+    glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, diffuse);
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, ambient);
 
-    // Draw half cone
-    glBegin(GL_TRIANGLE_FAN);
-    // Apex
-    glTexCoord2f(0.5f, 1.0f);
-    glVertex3f(0.0f, 0.0f, height);
-    
-    // Half of base vertices
-    for (int i = 0; i <= slices/2; i++) {
-        float angle = (mirror ? -1 : 1) * (i * M_PI / (slices/2));
-        float x = baseRadius * cos(angle);
-        float y = baseRadius * sin(angle);
-        glTexCoord2f((cos(angle)+1.0f)/2.0f, 0.0f);
-        glVertex3f(x, y, 0.0f);
-    }
-    glEnd();
+    // Use clipping to render half the cone
+    double clipEqn[] = { isRight ? 1.0 : -1.0, 0.0, 0.0, 0.0 }; // Swap left and right halves
+    glClipPlane(GL_CLIP_PLANE0, clipEqn);
+    glEnable(GL_CLIP_PLANE0);
 
-    // Draw half base
-    glBegin(GL_TRIANGLE_FAN);
-    glTexCoord2f(0.5f, 0.5f);
-    glVertex3f(0.0f, 0.0f, 0.0f);
-    for (int i = 0; i <= slices/2; i++) {
-        float angle = (mirror ? -1 : 1) * (i * M_PI / (slices/2));
-        float x = baseRadius * cos(angle);
-        float y = baseRadius * sin(angle);
-        glTexCoord2f((cos(angle)+1.0f)/2.0f, (sin(angle)+1.0f)/2.0f);
-        glVertex3f(x, y, 0.0f);
-    }
-    glEnd();
+    gluCylinder(quad, baseRadius, 0.0f, height, 32, 1);
+    gluDisk(quad, 0.0f, baseRadius, 32, 1);
 
+    glDisable(GL_CLIP_PLANE0);
     glPopMatrix();
 
     gluDeleteQuadric(quad);
@@ -563,13 +455,13 @@ float getProjectileCollisionRadius(ProjectileRenderData::Type type)
 {
     switch (type) {
     case ProjectileRenderData::CYLINDER:
-        return 1.2f; // ⬆️ account for cone tips + length
+        return 1.5f; // ⬆️ account for cone tips + length
     case ProjectileRenderData::CONE:
         return 1.0f;
     case ProjectileRenderData::CUBE:
         return 1.05f; // ⬆️ fix diagonal cube misses
     case ProjectileRenderData::PYRAMID:
-        return 1.5f;
+        return 1.35f;
     default:
         return 1.0f;
     }

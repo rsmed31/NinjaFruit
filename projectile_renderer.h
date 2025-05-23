@@ -26,6 +26,7 @@ private:
     void drawCube();
     void drawPyramid();
     void drawHalfCone(bool mirror);
+    void drawSplitPiece(ProjectileRenderData::Type type, bool isRight);
     
     // Physics and collision detection
     float getProjectileCollisionRadius(Projectile::Type type);

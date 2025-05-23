@@ -423,7 +423,34 @@ void GameWidget::checkHitZoneCollisions()
         // Get accurate collision radius based on shape geometry
         float radius = getProjectileCollisionRadius(proj.type);
 
-        // Unified sphere-segment collision test
+        if (proj.type == ProjectileRenderData::CYLINDER)
+        {
+            // Improved collision detection for cylinder (trunk)
+            float totalLength = 4.0f;  // cone + body + cone
+            float coneLength = 1.0f;
+            float bodyLength = 2.0f;
+
+            QVector3D dir(0, 0, 1); // Assume cylinder faces Z
+
+            QVector3D rearConePos = center - dir * (bodyLength / 2.0f + coneLength / 2.0f);
+            QVector3D bodyCenter = center;
+            QVector3D frontConePos = center + dir * (bodyLength / 2.0f + coneLength / 2.0f);
+
+            float swordConeDist1 = distanceBetweenSegments(handlePos, tipPos, rearConePos, rearConePos);
+            float swordBodyDist = distanceBetweenSegments(handlePos, tipPos, bodyCenter, bodyCenter);
+            float swordConeDist2 = distanceBetweenSegments(handlePos, tipPos, frontConePos, frontConePos);
+
+            if (swordConeDist1 <= 1.0f || swordBodyDist <= 1.2f || swordConeDist2 <= 1.0f)
+            {
+                emit projectileSlicedById(proj.id);
+                splitProjectile(index);
+                qDebug() << "Accurate trunk hit!";
+                ++index;
+                continue;
+            }
+        }
+
+        // Unified sphere-segment collision test for other types
         float dist = distanceBetweenSegments(handlePos, tipPos, center, center);
         if (dist <= radius)
         {
