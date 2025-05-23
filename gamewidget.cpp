@@ -403,16 +403,17 @@ void GameWidget::checkHitZoneCollisions()
         }
 
         float t = m_elapsedTime - proj.spawnTime;
-        QVector3D center = calculateProjectilePosition(proj, t);
+        QVector3D curr = calculateProjectilePosition(proj, t);
+        QVector3D prev = calculateProjectilePosition(proj, t - 0.016f); // Previous frame position
 
         // Basic spatial filter (is it in the hit zone?)
-        float dx = center.x() - cylinderCenter.x();
-        float dz = center.z() - cylinderCenter.z();
+        float dx = curr.x() - cylinderCenter.x();
+        float dz = curr.z() - cylinderCenter.z();
         float distXZ = std::sqrt(dx * dx + dz * dz);
 
         bool inRadius = distXZ <= cylinderRadius;
-        bool inHeight = center.y() >= cylinderCenter.y() &&
-                        center.y() <= cylinderCenter.y() + cylinderHeight;
+        bool inHeight = curr.y() >= cylinderCenter.y() &&
+                        curr.y() <= cylinderCenter.y() + cylinderHeight;
 
         if (!(inRadius && inHeight))
         {
@@ -423,40 +424,15 @@ void GameWidget::checkHitZoneCollisions()
         // Get accurate collision radius based on shape geometry
         float radius = getProjectileCollisionRadius(proj.type);
 
-        if (proj.type == ProjectileRenderData::CYLINDER)
-        {
-            // Improved collision detection for cylinder (trunk)
-            float totalLength = 4.0f;  // cone + body + cone
-            float coneLength = 1.0f;
-            float bodyLength = 2.0f;
-
-            QVector3D dir(0, 0, 1); // Assume cylinder faces Z
-
-            QVector3D rearConePos = center - dir * (bodyLength / 2.0f + coneLength / 2.0f);
-            QVector3D bodyCenter = center;
-            QVector3D frontConePos = center + dir * (bodyLength / 2.0f + coneLength / 2.0f);
-
-            float swordConeDist1 = distanceBetweenSegments(handlePos, tipPos, rearConePos, rearConePos);
-            float swordBodyDist = distanceBetweenSegments(handlePos, tipPos, bodyCenter, bodyCenter);
-            float swordConeDist2 = distanceBetweenSegments(handlePos, tipPos, frontConePos, frontConePos);
-
-            if (swordConeDist1 <= 1.0f || swordBodyDist <= 1.2f || swordConeDist2 <= 1.0f)
-            {
-                emit projectileSlicedById(proj.id);
-                splitProjectile(index);
-                qDebug() << "Accurate trunk hit!";
-                ++index;
-                continue;
-            }
-        }
-
-        // Unified sphere-segment collision test for other types
-        float dist = distanceBetweenSegments(handlePos, tipPos, center, center);
+        // Perform swept segment collision check
+        float dist = distanceBetweenSegments(handlePos, tipPos, prev, curr);
         if (dist <= radius)
         {
             emit projectileSlicedById(proj.id); // Emit signal with projectile ID
             splitProjectile(index);
             qDebug() << "Hit projectile of type" << proj.type << "at index" << index;
+            ++index;
+            continue;
         }
 
         ++index;
