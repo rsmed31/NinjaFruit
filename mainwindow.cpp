@@ -77,7 +77,7 @@ void MainWindow::setupUI()
     logoLabel->setAlignment(Qt::AlignCenter);
     welcomeLayout->addWidget(logoLabel);
 
-    QLabel* titleLabel = new QLabel("Zelda Denfender");
+    QLabel* titleLabel = new QLabel("Zelda Defender");
     titleLabel->setAlignment(Qt::AlignCenter);
     QFont titleFont("Arial", 48, QFont::Bold);
     titleLabel->setFont(titleFont);
@@ -262,6 +262,10 @@ void MainWindow::setupConnections()
     gameEngine->connectToGameWidget(gameWidget);
     connect(gameWidget, &GameWidget::projectileSlicedById, 
             gameEngine, &GameEngine::markProjectileSlicedById);
+
+    // Connect the projectilesCleared signal to the GameWidget
+    connect(gameEngine, &GameEngine::projectilesCleared,
+            gameWidget, &GameWidget::clearProjectiles);
 }
 
 void MainWindow::startCalibration()
