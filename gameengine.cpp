@@ -83,12 +83,17 @@ void GameEngine::resetGame()
     m_gameTime = GAME_DURATION;
     m_elapsedTime = 0.0f;
 
-    // Clear projectiles safely
-    while (!m_projectiles.isEmpty())
-    {
-        emit projectileRemoved(0);
-        m_projectiles.removeFirst();
+    // Clear all projectiles safely using clear() instead of individual removals
+    m_projectiles.clear();
+    m_projectilePool.clear();
+    m_projectileRenderData.clear();
+    
+    if (!m_slicedProjectiles.isEmpty()) {
+        m_slicedProjectiles.clear();
     }
+    
+    // Notify the renderer to clear all projectiles
+    emit projectilesCleared();
 
     // Reset sword positions
     m_swordHandle = QVector3D(0.0f, 0.0f, 0.0f);
@@ -177,6 +182,11 @@ void GameEngine::updateProjectiles(float deltaTime)
     // Update each, then recycle any that go inactive or out-of-bounds.
     for (int i = m_projectiles.size() - 1; i >= 0; --i)
     {
+        if (i >= m_projectiles.size()) {
+            // Defensive check against out-of-bounds access
+            continue;
+        }
+        
         Projectile &p = m_projectiles[i];
         p.update(deltaTime);
 
@@ -197,16 +207,27 @@ void GameEngine::updateProjectiles(float deltaTime)
                 emit livesChanged(m_lives);
                 p.markAsProcessed();
                 p.split();
+                
                 if (m_lives <= 0)
                 {
+                    // When lives reach 0, cleanly end the game
                     pauseGame();
+                    // Clear all projectiles before triggering game over
+                    m_projectiles.clear();
+                    m_projectilePool.clear();
+                    emit projectilesCleared();
                     emit gameOver(m_score);
+                    return; // Exit method immediately to prevent further processing
                 }
             }
-            // recycle instance into pool
-            m_projectilePool.append(p);
-            // remove from active list
-            m_projectiles.removeAt(i);
+            
+            // Only add to pool if we're still in the game
+            if (m_lives > 0) {
+                // recycle instance into pool
+                m_projectilePool.append(p);
+                // remove from active list
+                m_projectiles.removeAt(i);
+            }
         }
     }
 }

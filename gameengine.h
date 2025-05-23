@@ -63,6 +63,7 @@ signals:
     void projectileAdded(const Projectile& projectile);
     void projectileRemoved(int index);
     void projectileSplit(int index);
+    void projectilesCleared(); // New signal to notify when all projectiles are cleared
 
 public slots:
     // Add this slot to receive sword position updates
@@ -75,7 +76,7 @@ private slots:
 
 private:
     // Game parameters
-    static const int MAX_LIVES = 100;
+    static const int MAX_LIVES = 5;
     static const int GAME_DURATION = 60; // seconds
     
     // Game state
