@@ -6,6 +6,8 @@
 #include <QPen>
 #include <QFile> // Add this include for QFile::exists
 #include <algorithm> // For std::clamp
+#include <QMediaPlayer> // Add this include for sound playback
+#include <QAudioOutput> // Add this for audio output in Qt6
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -17,7 +19,14 @@ MainWindow::MainWindow(QWidget *parent)
     , lastY(0.0f)  // Initialize lastY
     , m_isWarmingUp(false) // Initialize warmup flag
     , m_warmupCount(0)     // Initialize warmup counter
+    , clickSound(new QMediaPlayer(this))
+    , clickAudioOutput(new QAudioOutput(this))
 {
+    // Set up audio output
+    clickAudioOutput->setVolume(0.5);
+    clickSound->setAudioOutput(clickAudioOutput);
+    clickSound->setSource(QUrl("qrc:/sounds/sounds/click.mp3"));
+
     // Now set up UI that uses handDetector
     setupUI();
     setupConnections();
@@ -52,6 +61,8 @@ MainWindow::~MainWindow()
     
     delete handDetector;
     delete gameEngine;
+    delete clickSound;
+    delete clickAudioOutput;
 }
 
 void MainWindow::setupUI()
@@ -66,16 +77,18 @@ void MainWindow::setupUI()
     
     // 1. Create elegant welcome screen with camera preview
     welcomeScreen = new QWidget();
-    welcomeScreen->setStyleSheet("background-color: #1a1a2e; color: white;"); // Dark elegant background
+    
+    // Set background image for welcome screen
+    welcomeScreen->setStyleSheet("QWidget#welcomeScreen { "
+                               "background-image: url(:/image/background.png); "
+                               "background-position: center; "
+                               "background-repeat: no-repeat; "
+                               "background-attachment: fixed; "
+                               "color: white; }");
+    welcomeScreen->setObjectName("welcomeScreen"); // Need to set object name for the stylesheet to work
+    
     QVBoxLayout* welcomeLayout = new QVBoxLayout(welcomeScreen);
     welcomeLayout->setContentsMargins(40, 40, 40, 40); // More spacing for elegance
-    
-    // Add logo above the title
-    QLabel* logoLabel = new QLabel();
-    QPixmap logoPix(":/image/logo.png");
-    logoLabel->setPixmap(logoPix.scaled(80, 80, Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    logoLabel->setAlignment(Qt::AlignCenter);
-    welcomeLayout->addWidget(logoLabel);
 
     QLabel* titleLabel = new QLabel("Zelda Defender");
     titleLabel->setAlignment(Qt::AlignCenter);
@@ -231,11 +244,28 @@ void MainWindow::setupUI()
 
 void MainWindow::setupConnections()
 {
-    // Menu buttons
-    connect(startButton, &QPushButton::clicked, this, &MainWindow::startGame);
-    connect(calibrateButton, &QPushButton::clicked, this, &MainWindow::startCalibration);
-    connect(exitButton, &QPushButton::clicked, this, &MainWindow::exitGame);
+    // Menu buttons with sound effects
+    connect(startButton, &QPushButton::clicked, this, [this]() {
+        clickSound->stop();
+        clickSound->play();
+        startGame();
+    });
+    
+    connect(calibrateButton, &QPushButton::clicked, this, [this]() {
+        clickSound->stop();
+        clickSound->play();
+        startCalibration();
+    });
+    
+    connect(exitButton, &QPushButton::clicked, this, [this]() {
+        clickSound->stop();
+        clickSound->play();
+        exitGame();
+    });
+    
     connect(returnToMenuButton, &QPushButton::clicked, [this]() {
+        clickSound->stop();
+        clickSound->play();
         gameEngine->pauseGame();
         processingTimer.stop();
         mainStack->setCurrentWidget(welcomeScreen);

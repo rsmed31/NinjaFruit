@@ -4,10 +4,19 @@
 #include "projectilerenderdata.h" // Include for getProjectileCollisionRadius
 #include <QDebug>
 #include <GL/gl.h>
+#include <QMediaPlayer>
+#include <QAudioOutput>
 
 GameEngine::GameEngine(QObject *parent)
-    : QObject(parent), m_gameRunning(false), m_score(0), m_lives(MAX_LIVES), m_gameTime(GAME_DURATION), m_elapsedTime(0.0f), m_handPosition(0.0f, 0.0f, 0.0f)
+    : QObject(parent), m_gameRunning(false), m_score(0), m_lives(MAX_LIVES), m_gameTime(GAME_DURATION), 
+      m_elapsedTime(0.0f), m_handPosition(0.0f, 0.0f, 0.0f),
+      m_swordSound(new QMediaPlayer(this)), m_swordAudioOutput(new QAudioOutput(this))
 {
+    // Set up audio
+    m_swordAudioOutput->setVolume(0.7);
+    m_swordSound->setAudioOutput(m_swordAudioOutput);
+    m_swordSound->setSource(QUrl("qrc:/sounds/sounds/sword.mp3"));
+    
     // Set up launch zone to start projectiles farther away
     m_launchZone.center = QVector3D(0.0f, 2.0f, -5.0f); // Update to be farther from screen
     m_launchZone.width = 10.0f;
@@ -38,6 +47,8 @@ GameEngine::GameEngine(QObject *parent)
 GameEngine::~GameEngine()
 {
     pauseGame(); // Ensure timers are stopped
+    delete m_swordSound;
+    delete m_swordAudioOutput;
 }
 
 void GameEngine::startGame()
@@ -334,6 +345,10 @@ void GameEngine::markProjectileSlicedById(int id)
     {
         if (proj.getId() == id && !proj.wasSliced())
         {
+            // Play sword sound effect
+            m_swordSound->stop();
+            m_swordSound->play();
+            
             proj.markAsSliced();
             proj.markAsProcessed(); // Prevent lives from decreasing
             proj.split();           // Mark the projectile as split

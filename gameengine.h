@@ -7,6 +7,8 @@
 #include <QVector3D>
 #include <QRandomGenerator>
 #include <QSet>
+#include <QMediaPlayer>
+#include <QAudioOutput>
 #include "projectile.h"
 #include "projectilerenderdata.h" // Add this include
 
@@ -107,6 +109,10 @@ private:
     QTimer m_gameTimer;      // Main game update timer
     QTimer m_spawnTimer;     // Controls projectile spawning
     QTimer m_gameClockTimer; // Updates game remaining time
+    
+    // Sound effects
+    QMediaPlayer *m_swordSound;
+    QAudioOutput *m_swordAudioOutput;
     
     // Game methods
     void checkCollisions();

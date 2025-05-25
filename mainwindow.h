@@ -10,6 +10,8 @@
 #include <QStackedWidget>
 #include <QPushButton>
 #include <QTimer>
+#include <QMediaPlayer>
+#include <QAudioOutput>
 
 #include "calibrationwidget.h"
 #include "handdetector.h"
@@ -101,6 +103,10 @@ private:
     bool m_isWarmingUp; // Indicates if the camera is warming up
     int m_warmupCount;  // Counts the number of frames skipped during warmup
     
+    // Sound effects
+    QMediaPlayer *clickSound;
+    QAudioOutput *clickAudioOutput;
+
     // Methods
     void setupUI();
     void setupConnections();
