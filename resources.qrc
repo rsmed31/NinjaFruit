@@ -9,7 +9,9 @@
         <file>textures/floor.png</file>
     </qresource>
     <qresource prefix="/">
-       <file>image/background.png</file>
+       <file>image/background.jpg</file>       
+       <file>image/logo.png</file>
+
     </qresource>
     <qresource prefix="/sounds">
         <file>sounds/click.mp3</file>

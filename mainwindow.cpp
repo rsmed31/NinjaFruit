@@ -80,7 +80,7 @@ void MainWindow::setupUI()
     
     // Set background image for welcome screen
     welcomeScreen->setStyleSheet("QWidget#welcomeScreen { "
-                               "background-image: url(:/image/background.png); "
+                               "background-image: url(:/image/background.jpg); "
                                "background-position: center; "
                                "background-repeat: no-repeat; "
                                "background-attachment: fixed; "
@@ -94,7 +94,7 @@ void MainWindow::setupUI()
     titleLabel->setAlignment(Qt::AlignCenter);
     QFont titleFont("Arial", 48, QFont::Bold);
     titleLabel->setFont(titleFont);
-    titleLabel->setStyleSheet("color: #e94560; margin-bottom: 20px;"); // Striking color
+    titleLabel->setStyleSheet("color:rgb(0, 0, 0); margin-bottom: 20px;"); // Striking color
     
     // Add camera preview to welcome screen
     QHBoxLayout* welcomeMiddleLayout = new QHBoxLayout();
